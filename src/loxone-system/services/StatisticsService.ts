@@ -1,10 +1,10 @@
 import dayjs from 'dayjs';
-import { inject, injectable, container } from 'tsyringe';
-import { StatisticsPeriod, AggregationInterval, type StructureFile, type LoxoneConfig } from '../types/structure.js';
-import type { 
-  StatisticsResponse, 
-  StatisticsDataPoint, 
-  AggregatedDataPoint, 
+import { injectable, container } from 'tsyringe';
+import { StatisticsPeriod, AggregationInterval, type StructureFile } from '../types/structure.js';
+import type {
+  StatisticsResponse,
+  StatisticsDataPoint,
+  AggregatedDataPoint,
   StatisticsSummary,
   StatisticsAvailableDate,
   StatisticsMetadata,
@@ -14,6 +14,7 @@ import type {
 } from '../types/statistics.js';
 import { TimeService } from './TimeService.js';
 import { Logger } from '../../utils/Logger.js';
+import { ConnectionManager } from './ConnectionManager.js';
 
 // Re-export the response type for convenience
 export type { StatisticsResponse } from '../types/statistics.js';
@@ -38,7 +39,7 @@ export class StatisticsService {
   private logger: Logger;
 
   constructor(
-    @inject('LoxoneConfig') private readonly config: LoxoneConfig,
+    private readonly connectionManager: ConnectionManager,
     private readonly timeService: TimeService
   ) {
     this.logger = container.resolve(Logger);
@@ -60,34 +61,24 @@ export class StatisticsService {
       if (!hasV1 && !hasV2) {
         throw new Error(`Control ${controlUuid} does not have statistics enabled`);
       }
-      
       // Calculate time range and aggregation based on period
       const { fromTimestamp, toTimestamp, aggregationInterval } = this.timeService.calculateTimeRange(period);
 
       // Try to fetch actual statistics data via HTTP
       try {
-        const auth = Buffer.from(`${this.config.username}:${this.config.password}`).toString('base64');
-        const baseUrl = `http://${this.config.host}:${this.config.port || 80}`;
-        
         // Fetch statistics metadata
-        const statsData = await this.fetchStatisticsMetadata(baseUrl, auth);
+        const statsData = await this.fetchStatisticsMetadata();
         const availableDates = this.findAvailableDates(statsData, controlUuid);
-        
         this.logger.debug('StatisticsService', `Found ${availableDates.length} statistics files for control`);
-        
         // For v1 statistics, fetch and process data
         if (hasV1 && !hasV2) {
           const allDataPoints = await this.fetchV1Statistics(
             controlUuid, 
-            baseUrl, 
-            auth, 
             fromTimestamp, 
             toTimestamp
           );
-          
           const aggregatedData = this.aggregateData(allDataPoints, aggregationInterval);
           const summary = this.calculateSummary(allDataPoints);
-          
           const response: V1StatisticsResponse = {
             type: 'v1',
             control: control.name,
@@ -103,7 +94,6 @@ export class StatisticsService {
           };
           return response;
         }
-        
         // For v2 statistics (binary format)
         if (hasV2) {
           const response: V2StatisticsResponse = {
@@ -122,7 +112,6 @@ export class StatisticsService {
           };
           return response;
         }
-        
       } catch (fileError) {
         this.logger.error('StatisticsService', 'File command failed:', fileError);
         // Return fallback metadata
@@ -139,17 +128,13 @@ export class StatisticsService {
       this.logger.error('StatisticsService', 'Statistics fetch failed:', error);
       throw error;
     }
-    
     // This should never be reached, but TypeScript needs it
     throw new Error('Unexpected statistics response state');
   }
 
-  private async fetchStatisticsMetadata(baseUrl: string, auth: string): Promise<StatisticsMetadata | null> {
+  private async fetchStatisticsMetadata(): Promise<StatisticsMetadata | null> {
     this.logger.debug('StatisticsService', 'Fetching statistics metadata via HTTP...');
-    const statsResponse = await fetch(`${baseUrl}/stats/statistics.json`, {
-      headers: { 'Authorization': `Basic ${auth}` }
-    });
-    
+    const statsResponse = await this.connectionManager.fetch(`stats/statistics.json`);
     if (statsResponse.ok) {
       const statsText = await statsResponse.text();
       try {
@@ -179,8 +164,6 @@ export class StatisticsService {
 
   private async fetchV1Statistics(
     controlUuid: string,
-    baseUrl: string,
-    auth: string,
     fromTimestamp: number,
     toTimestamp: number
   ): Promise<StatisticsDataPoint[]> {
@@ -189,13 +172,9 @@ export class StatisticsService {
     
     for (const monthStr of monthsNeeded) {
       try {
-        const xmlUrl = `${baseUrl}/stats/statisticdata.xml/${controlUuid}/${monthStr}`;
+        const xmlUrl = `stats/statisticdata.xml/${controlUuid}/${monthStr}`;
         this.logger.debug('StatisticsService', `Fetching statistics data: ${xmlUrl}`);
-        
-        const xmlResponse = await fetch(xmlUrl, {
-          headers: { 'Authorization': `Basic ${auth}` }
-        });
-        
+        const xmlResponse = await this.connectionManager.fetch(xmlUrl);
         if (xmlResponse.ok) {
           const xmlText = await xmlResponse.text();
           const dataPoints = this.parseStatisticsXml(xmlText, fromTimestamp, toTimestamp);
@@ -213,12 +192,10 @@ export class StatisticsService {
   private parseStatisticsXml(xmlText: string, fromTimestamp: number, toTimestamp: number): StatisticsDataPoint[] {
     const dataPoints: StatisticsDataPoint[] = [];
     const matches = xmlText.matchAll(/<S\s+T="([^"]+)"\s+V="([^"]+)"\/>/g);
-    
     for (const match of matches) {
       let timestamp: number;
       const timeStr = match[1];
       const value = parseFloat(match[2]);
-      
       // Check if timestamp is already a number or a date string
       if (/^\d+$/.test(timeStr)) {
         timestamp = parseInt(timeStr);
@@ -226,7 +203,6 @@ export class StatisticsService {
         // Parse date string "YYYY-MM-DD HH:MM:SS"
         timestamp = Math.floor(new Date(timeStr + ' UTC').getTime() / 1000);
       }
-      
       // Only include data within our time range
       if (timestamp >= fromTimestamp && timestamp <= toTimestamp) {
         dataPoints.push({
@@ -236,7 +212,6 @@ export class StatisticsService {
         });
       }
     }
-    
     return dataPoints;
   }
 
@@ -245,7 +220,6 @@ export class StatisticsService {
     const fromDate = new Date(fromTimestamp * 1000);
     const toDate = new Date(toTimestamp * 1000);
     let currentDate = new Date(fromDate);
-    
     while (currentDate <= toDate) {
       const yearMonth = currentDate.toISOString().slice(0, 7).replace('-', '');
       if (!months.includes(yearMonth)) {
@@ -253,32 +227,26 @@ export class StatisticsService {
       }
       currentDate.setMonth(currentDate.getMonth() + 1);
     }
-    
     return months;
   }
 
   private aggregateData(dataPoints: StatisticsDataPoint[], interval: AggregationInterval): AggregatedDataPoint[] {
     if (dataPoints.length === 0) return [];
-    
     const aggregated: AggregatedDataPoint[] = [];
     const buckets: { [key: string]: StatisticsDataPoint[] } = {};
     const offset = this.timeService.getControllerTimeOffset();
-    
     // Parse offset to get hours and minutes for timezone adjustment
     const offsetMatch = offset.match(/([+-])(\d{2}):(\d{2})/);
     const offsetMinutes = offsetMatch ? 
       (offsetMatch[1] === '+' ? 1 : -1) * (parseInt(offsetMatch[2]) * 60 + parseInt(offsetMatch[3])) : 0;
-    
     // Format ISO offset string
     const isoOffset = offsetMatch ? 
       `${offsetMatch[1]}${String(offsetMatch[2]).padStart(2, '0')}:${String(offsetMatch[3]).padStart(2, '0')}` : 
       '+00:00';
-    
     // Group data into buckets based on interval
     for (const point of dataPoints) {
       let bucketKey: string;
       const adjustedDate = dayjs(point.date).add(offsetMinutes, 'minute');
-      
       switch (interval) {
         case AggregationInterval.Minute:
           bucketKey = adjustedDate.format('YYYY-MM-DDTHH:mm:ss') + isoOffset;
@@ -295,13 +263,11 @@ export class StatisticsService {
         default:
           bucketKey = point.timestamp?.toString() || '';
       }
-      
       if (!buckets[bucketKey]) {
         buckets[bucketKey] = [];
       }
       buckets[bucketKey].push(point);
     }
-    
     // Calculate averages for each bucket
     for (const [, points] of Object.entries(buckets)) {
       const values = points.map(p => p.value);
@@ -317,7 +283,6 @@ export class StatisticsService {
         count: points.length
       });
     }
-    
     return aggregated.sort((a, b) => {
       const aTime = new Date(a.timestamp).getTime();
       const bTime = new Date(b.timestamp).getTime();
@@ -327,11 +292,9 @@ export class StatisticsService {
 
   private calculateSummary(dataPoints: StatisticsDataPoint[]): StatisticsSummary | { message: string } {
     if (dataPoints.length === 0) {
-      return {
-        message: 'No data available for this period'
-      };
+      return { message: 'No data available for this period' };
     }
-    
+
     const values = dataPoints.map(p => p.value);
     const minValue = Math.min(...values);
     const maxValue = Math.max(...values);
@@ -364,7 +327,6 @@ export class StatisticsService {
     hasV2: boolean
   ): FallbackStatisticsResponse {
     const { aggregationInterval } = this.timeService.calculateTimeRange(period);
-    
     const response: FallbackStatisticsResponse = {
       type: hasV2 ? 'v2' : 'v1',
       control: control.name,

@@ -5,7 +5,10 @@ export interface LoxoneConfig {
   host: string;
   username: string;
   password: string;
-  port?: number;
+  port: number;
+  protocol: 'http' | 'https';
+  wsProtocol: 'ws' | 'wss';
+  serialNumber: string;
 }
 
 export interface Room {

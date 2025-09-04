@@ -13,6 +13,8 @@ import { ControlManager } from './services/ControlManager.js';
 import { TimeService } from './services/TimeService.js';
 import { StatisticsService } from './services/StatisticsService.js';
 import { EventHandlerService } from './services/EventHandlerService.js';
+import { CloudDiscoveryService } from './services/CloudDiscoveryService.js';
+//import { CloudDiscoveryService } from './services/CloudDiscoveryService.js';
 
 export class LoxoneSystem {
   public readonly connectionManager: ConnectionManager;
@@ -24,14 +26,12 @@ export class LoxoneSystem {
   private timeService: TimeService;
   private readonly scopedContainer: DependencyContainer;
   private logger: Logger;
+  private options: Partial<LoxoneConfig>;
 
-  constructor(private readonly config: LoxoneConfig) {
+  constructor(options: Partial<LoxoneConfig>) {
+    this.options = { ...options };
     // Create a scoped container for this instance
     this.scopedContainer = container.createChildContainer();
-    
-    // Register config
-    this.scopedContainer.register<LoxoneConfig>('LoxoneConfig', { useValue: this.config });
-    
     // Register services as singletons within this scope
     this.scopedContainer.registerSingleton(StateManager);
     this.scopedContainer.registerSingleton(ConnectionManager);
@@ -39,7 +39,6 @@ export class LoxoneSystem {
     this.scopedContainer.registerSingleton(ControlManager);
     this.scopedContainer.registerSingleton(TimeService);
     this.scopedContainer.registerSingleton(StatisticsService);
-    
     // Resolve all services from the scoped container
     this.connectionManager = this.scopedContainer.resolve(ConnectionManager);
     this.eventHandlerService = this.scopedContainer.resolve(EventHandlerService);
@@ -47,19 +46,24 @@ export class LoxoneSystem {
     this.controlManager = this.scopedContainer.resolve(ControlManager);
     this.timeService = this.scopedContainer.resolve(TimeService);
     this.statisticsService = this.scopedContainer.resolve(StatisticsService);
-    
     // Get logger from parent container
     this.logger = container.resolve(Logger);
   }
 
-  public async initialize(): Promise<void> {
+  public async open(): Promise<void> {
     if (this.initialized) {
       this.logger.warn('LoxoneSystem', 'Already initialized');
       return;
     }
-
     try {
       this.logger.info('LoxoneSystem', 'Initializing...');
+      // try discovering loxone if hostname not provided
+      if (!this.options.host && this.options.serialNumber) {
+        this.options = {
+          ...this.options,
+          ...await this.discoverCloudMiniserver(this.options.serialNumber),
+        }
+      }
       this.connectionManager.on('structureLoaded', async (structure: StructureFile) => {
         this.logger.info('LoxoneSystem', 'Structure loaded');
         await this.controlManager.updateStructure(structure);
@@ -67,12 +71,27 @@ export class LoxoneSystem {
         await this.statisticsService.updateStructure(structure);
       });
       // Connect and load structure
-      await this.connectionManager.connect();
+      await this.connectionManager.initialize(this.options)
+        .connect();
+
       this.initialized = true;
       this.logger.info('LoxoneSystem', 'Initialization complete');
     } catch (error) {
       this.logger.error('LoxoneSystem', 'Initialization failed:', error);
       throw error;
+    }
+  }
+
+  private async discoverCloudMiniserver(serialNumber: string): Promise<Partial<LoxoneConfig>> {
+    this.logger.info('ConnectionManager', 'Discovering Cloud Miniserver...');
+    const cloudDiscoveryResult = await CloudDiscoveryService
+          .discoverMiniserver(serialNumber);
+    this.logger.info('ConnectionManager', `Discovered Cloud Miniserver... ${cloudDiscoveryResult}`);
+    return {
+      host: cloudDiscoveryResult.host,
+      port: cloudDiscoveryResult.port,
+      protocol: cloudDiscoveryResult.protocol,
+      wsProtocol: cloudDiscoveryResult.wsProtocol,
     }
   }
 

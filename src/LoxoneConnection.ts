@@ -16,12 +16,12 @@ import type { StatisticsResponse } from './loxone-system/types/statistics.js';
 export class LoxoneConnection {
   private system: LoxoneSystem;
 
-  constructor(config: LoxoneConfig) {
+  constructor(config: Partial<LoxoneConfig>) {
     this.system = new LoxoneSystem(config);
   }
 
-  public async connect() {
-    await this.system.initialize();
+  public async open() {
+    await this.system.open();
   }
 
   public async close() {
