@@ -13,7 +13,7 @@ import type {
   FallbackStatisticsResponse
 } from '../types/statistics.js';
 import { TimeService } from './TimeService.js';
-import { Logger } from '../../utils/Logger.js';
+import { Logger } from '../../../utils/Logger.js';
 import { ConnectionManager } from './ConnectionManager.js';
 
 // Re-export the response type for convenience

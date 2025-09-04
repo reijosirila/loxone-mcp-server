@@ -4,7 +4,7 @@ import { injectable, container } from 'tsyringe';
 import { AggregationInterval, StatisticsPeriod, type StructureFile } from '../types/structure.js';
 import { StateManager } from './StateManager.js';
 import { ConnectionManager } from './ConnectionManager.js';
-import { Logger } from '../../utils/Logger.js';
+import { Logger } from '../../../utils/Logger.js';
 
 dayjs.extend(utc);
 

@@ -4,7 +4,7 @@ import LoxoneClient from 'loxone-ts-api';
 import type { LoxoneConfig, StructureFile } from '../types/structure.js';
 import type { TextCommandResponse } from '../types/api-responses.js';
 import { retry } from '../utils/index.js';
-import { Logger } from '../../utils/Logger.js';
+import { Logger } from '../../../utils/Logger.js';
 import assert from 'assert';
 
 type LoxoneConfigInternal = Omit<LoxoneConfig, 'serialNumber'>;
@@ -24,6 +24,7 @@ type LoxoneConfigInternal = Omit<LoxoneConfig, 'serialNumber'>;
 export class ConnectionManager extends EventEmitter {
   private client?: LoxoneClient;
   private connected: boolean = false;
+  private structureLoaded: boolean = false;
   private structure: StructureFile | null = null;
   private options: LoxoneConfigInternal | null = null;
 
@@ -156,6 +157,7 @@ export class ConnectionManager extends EventEmitter {
       );
       this.logger.info('ConnectionManager', `Structure loaded. Found ${Object.keys(this.structure?.controls || {}).length} controls`);
       this.emit('structureLoaded', this.structure);
+      this.structureLoaded = true;
     } catch (err) {
       this.logger.error('ConnectionManager', 'Failed to load structure:', err);
       await this.client.disconnect();
@@ -185,6 +187,10 @@ export class ConnectionManager extends EventEmitter {
 
   public isConnected() {
     return this.connected;
+  }
+
+  public isStructureLoaded() {
+    return this.structureLoaded;
   }
 
   public async sendCommand(command: string): Promise<TextCommandResponse> {

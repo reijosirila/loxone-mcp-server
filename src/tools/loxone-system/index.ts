@@ -4,7 +4,7 @@ import type {
   LoxoneConfig,
   StructureFile
 } from './types/structure.js';
-import { Logger } from '../utils/Logger.js';
+import { Logger } from '../../utils/Logger.js';
 
 // Services
 import { ConnectionManager } from './services/ConnectionManager.js';

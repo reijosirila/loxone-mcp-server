@@ -4,8 +4,9 @@ import { AbstractControlType } from '../control-types/AbstractControlType.js';
 import { ControlTypeFactory } from '../control-types/ControlTypeFactory.js';
 import { ConnectionManager } from './ConnectionManager.js';
 import { StateManager } from './StateManager.js';
-import { Logger } from '../../utils/Logger.js';
+import { Logger } from '../../../utils/Logger.js';
 import { isLoxoneControl } from '../types/control-structure.js';
+import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 
 const UNSUPPORTED_CONTROLS: (ControlType | string)[] = [
   ControlType.EFM,
@@ -94,10 +95,7 @@ export class ControlManager  {
 
   public getControl(uuid: string): AbstractControlType {
     if (!this.structure) {
-      throw new Error('Connecting to Smart Home. Try again later.');
-    }
-    if (!uuid) {
-      throw new Error('No control UUID provided');
+      throw new McpError(ErrorCode.ConnectionClosed,'Connecting to Smart Home. Try again later.');
     }
     const control = this.structure.controls[uuid];
     if (!control) {
@@ -109,17 +107,14 @@ export class ControlManager  {
 
   public async setControl(uuid: string, command: string, value?: unknown): Promise<boolean> {
     if (!this.connection.isConnected()) {
-      throw new Error('Not connected to Loxone');
+      throw new McpError(ErrorCode.ConnectionClosed, 'Not connected to Loxone');
     }
     if (!this.structure) {
-      throw new Error('Connecting to Smart Home. Try again later.');
-    }
-    if (!uuid) {
-      throw new Error('No control UUID provided');
+      throw new McpError(ErrorCode.ConnectionClosed,'Connecting to Smart Home. Try again later.');
     }
     const control = this.structure.controls[uuid];
     if (!control) {
-      throw new Error(`Control ${uuid} not found`);
+      throw new McpError(ErrorCode.MethodNotFound,`Control ${uuid} not found`);
     }
     try {
       // Create control type instance and build command

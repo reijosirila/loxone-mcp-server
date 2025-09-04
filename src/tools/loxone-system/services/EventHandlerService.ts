@@ -3,7 +3,7 @@ import { bufferToUuid } from '../utils/index.js';
 import { StateManager } from './StateManager.js';
 import { ConnectionManager } from './ConnectionManager.js';
 import { injectable } from 'tsyringe';
-import { Logger } from '../../utils/Logger.js';
+import { Logger } from '../../../utils/Logger.js';
 
 /**
  * EventHandlerService processes real-time events from the Loxone Miniserver.
