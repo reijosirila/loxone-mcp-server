@@ -86,7 +86,7 @@ export class LoxoneSystem {
     this.logger.info('ConnectionManager', 'Discovering Cloud Miniserver...');
     const cloudDiscoveryResult = await CloudDiscoveryService
           .discoverMiniserver(serialNumber);
-    this.logger.info('ConnectionManager', `Discovered Cloud Miniserver... ${cloudDiscoveryResult}`);
+    this.logger.info('ConnectionManager', `Discovered Cloud Miniserver... ${cloudDiscoveryResult.fullUrl}`);
     return {
       host: cloudDiscoveryResult.host,
       port: cloudDiscoveryResult.port,
