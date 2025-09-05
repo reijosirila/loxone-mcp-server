@@ -13,6 +13,13 @@ Temporarily disabled ventilation and asked to analyze air quality impact and gen
 - **Climate Control**: Manage ventilation, heating, and cooling systems
 - **Environmental Monitoring**: Generate reports on indoor climate conditions (temperature, humidity, CO2 levels)
 
+## Loxone Statistics Support
+
+The MCP server supports Loxone Statistics, which aggregates historical data into smaller portions optimized for AI analysis. This allows for efficient analysis of trends and patterns in your smart home data.
+
+- **Statistics V1**: ✅ Fully supported and tested
+- **Statistics V2**: ⚠️ Supported but not yet tested
+
 ## Loxone Control Implementation Status
 
 | Control | Implemented | Support Level | Tested |
