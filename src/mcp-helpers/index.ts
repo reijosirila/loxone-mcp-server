@@ -1,10 +1,10 @@
+import 'reflect-metadata';
+import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+
 /**
  * MCP Helper Functions and Decorators
  * Shared utilities for MCP tool implementation
  */
-
-import 'reflect-metadata';
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 
 // JSON Schema primitive types
 type JSONSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object' | 'null';
@@ -119,7 +119,6 @@ export function tool(metadata: ToolMetadata): MethodDecorator {
       };
       Reflect.defineMetadata('tool:patched', true, patchedConstructor);
     }
-
     return descriptor;
   };
 }
@@ -132,7 +131,6 @@ export function getToolsFromInstance(instance: any): RegisteredTool[] {
   const tools: RegisteredTool[] = [];
   const prototype = Object.getPrototypeOf(instance);
   const toolMethods = Reflect.getMetadata('tools', prototype) || [];
-
   for (const methodName of toolMethods) {
     const metadata = Reflect.getMetadata('tool:metadata', prototype, methodName);
     const toolName = Reflect.getMetadata('tool:name', prototype, methodName);
@@ -146,7 +144,6 @@ export function getToolsFromInstance(instance: any): RegisteredTool[] {
       });
     }
   }
-
   return tools;
 }
 
@@ -158,7 +155,6 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
   const schema = tool.inputSchema;
   const required = schema.required || [];
   const properties = schema.properties || {};
-  
   // Check all required parameters are present and not empty
   for (const param of required) {
     if (!(param in args)) {
@@ -167,7 +163,6 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
         `Missing required parameter: ${param} for tool ${tool.name}`
       );
     }
-    
     const value = args[param];
     // Check for empty/null/undefined values
     if (value === null || value === undefined) {
@@ -176,7 +171,6 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
         `Required parameter ${param} cannot be null or undefined for tool ${tool.name}`
       );
     }
-    
     // Check for empty strings
     if (typeof value === 'string' && value.trim() === '') {
       throw new McpError(
@@ -184,7 +178,6 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
         `Required parameter ${param} cannot be an empty string for tool ${tool.name}`
       );
     }
-    
     // Check for empty arrays
     if (Array.isArray(value) && value.length === 0) {
       throw new McpError(
@@ -193,7 +186,6 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
       );
     }
   }
-  
   // Validate parameter types
   for (const [key, value] of Object.entries(args)) {
     if (!(key in properties)) {
@@ -202,10 +194,8 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
         `Unknown parameter: ${key} for tool ${tool.name}`
       );
     }
-    
     const propSchema = properties[key];
     const expectedType = propSchema.type;
-    
     // Map JavaScript typeof to JSON Schema types
     const getJsonSchemaType = (val: unknown): JSONSchemaType | 'undefined' => {
       if (val === null) return 'null';
@@ -219,15 +209,12 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
       if (jsType === 'boolean') return 'boolean';
       return 'undefined';
     };
-    
     const schemaType = getJsonSchemaType(value);
-    
     // Skip type validation for optional parameters that are null/undefined
     const isRequired = required.includes(key);
     if (!isRequired && (value === null || value === undefined)) {
       continue; // Skip validation for optional null/undefined values
     }
-    
     // Handle array of types (e.g., ['string', 'number', 'boolean'])
     if (Array.isArray(expectedType)) {
       if (!expectedType.includes(schemaType as JSONSchemaType)) {
@@ -243,7 +230,6 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
         `Invalid type for parameter ${key}: expected ${expectedType}, got ${schemaType}`
       );
     }
-    
     // Validate enum values if specified
     if (propSchema.enum && !propSchema.enum.includes(value)) {
       throw new McpError(
@@ -261,7 +247,6 @@ export function validateArguments(tool: RegisteredTool, args: Record<string, unk
 export function formatMcpResponse(result: unknown) {
   // Handle special cases for controls with toJSON method
   let data = result;
-  
   if (Array.isArray(result)) {
     // If array of controls, check if they have toJSON
     data = result.map(item => 

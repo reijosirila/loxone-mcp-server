@@ -6,7 +6,11 @@ import { dirname, join } from 'path';
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-dotenv.config({ path: join(__dirname, '..', '.env') });
+// Use quiet mode to suppress dotenv output to stdout
+dotenv.config({ 
+  path: join(__dirname, '..', '.env'),
+  quiet: true 
+});
 
 // Configuration
 const config: Partial<LoxoneConfig> = {

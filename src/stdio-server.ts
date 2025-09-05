@@ -21,7 +21,7 @@ import {
 // Register Logger configuration for stdio transport
 const loggerConfig: LoggerConfig = {
   transport: 'stdio',
-  level: LogLevel.DEBUG
+  level: LogLevel.WARN
 };
 // logger it is important to load logger first, so we don't have unexpected console.log
 container.register<LoggerConfig>('LoggerConfig', { useValue: loggerConfig });
