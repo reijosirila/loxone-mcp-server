@@ -1,0 +1,140 @@
+{
+  "globalStates": {
+    "notifications": "0",
+    "modifications": "1"
+  },
+  "controls": {
+    "1234abcd-5678-90ef-1234-567890abcdef": {
+      "name": "Test Switch",
+      "type": "Switch",
+      "uuidAction": "1234abcd-5678-90ef-1234-567890abcdef",
+      "room": "room-uuid-1",
+      "cat": "cat-uuid-1",
+      "defaultRating": 1,
+      "secured": false,
+      "isFavorite": false,
+      "details": {
+        "format": ""
+      },
+      "states": {
+        "active": "1234abcd-5678-90ef-1234-567890abcdef"
+      }
+    },
+    "2345bcde-6789-01fa-2345-678901bcdefg": {
+      "name": "Test Dimmer",
+      "type": "Dimmer",
+      "uuidAction": "2345bcde-6789-01fa-2345-678901bcdefg",
+      "room": "room-uuid-1",
+      "cat": "cat-uuid-2",
+      "defaultRating": 2,
+      "secured": false,
+      "isFavorite": true,
+      "details": {
+        "format": "%.0f%%",
+        "min": 0,
+        "max": 100,
+        "step": 1
+      },
+      "states": {
+        "position": "2345bcde-6789-01fa-2345-678901bcdefg",
+        "min": "2345bcde-6789-01fa-2345-678901bcdefg-min",
+        "max": "2345bcde-6789-01fa-2345-678901bcdefg-max",
+        "step": "2345bcde-6789-01fa-2345-678901bcdefg-step"
+      }
+    },
+    "3456cdef-7890-12ab-3456-789012cdefgh": {
+      "name": "Test Meter",
+      "type": "Meter",
+      "uuidAction": "3456cdef-7890-12ab-3456-789012cdefgh",
+      "room": "room-uuid-2",
+      "cat": "cat-uuid-3",
+      "defaultRating": 0,
+      "secured": false,
+      "isFavorite": false,
+      "details": {
+        "format": "%.2fkWh",
+        "actualFormat": "%.2fkW",
+        "totalFormat": "%.2fkWh"
+      },
+      "states": {
+        "actual": "3456cdef-7890-12ab-3456-789012cdefgh-actual",
+        "total": "3456cdef-7890-12ab-3456-789012cdefgh-total"
+      },
+      "statistic": 1,
+      "statisticV2": 2
+    }
+  },
+  "rooms": {
+    "room-uuid-1": {
+      "name": "Living Room",
+      "uuid": "room-uuid-1",
+      "defaultRating": 1
+    },
+    "room-uuid-2": {
+      "name": "Kitchen",
+      "uuid": "room-uuid-2",
+      "defaultRating": 2
+    }
+  },
+  "cats": {
+    "cat-uuid-1": {
+      "name": "Lights",
+      "uuid": "cat-uuid-1",
+      "type": "lights",
+      "defaultRating": 1
+    },
+    "cat-uuid-2": {
+      "name": "Dimmers",
+      "uuid": "cat-uuid-2",
+      "type": "lights",
+      "defaultRating": 2
+    },
+    "cat-uuid-3": {
+      "name": "Energy",
+      "uuid": "cat-uuid-3",
+      "type": "undefined",
+      "defaultRating": 0
+    }
+  },
+  "msInfo": {
+    "serialNr": "504F94123456",
+    "msName": "Test Miniserver",
+    "projectName": "Test Project",
+    "localUrl": "http://192.168.1.100",
+    "remoteUrl": "",
+    "tempUnit": 0,
+    "currency": "€",
+    "squareMeasure": "m²",
+    "location": "Test Location",
+    "languageCode": "en",
+    "heatPeriodStart": "10-01",
+    "heatPeriodEnd": "04-30",
+    "coolPeriodStart": "05-01",
+    "coolPeriodEnd": "09-30",
+    "catColors": {
+      "lights": "#ffcc00",
+      "shading": "#009900"
+    },
+    "roomColors": {},
+    "currentUser": {
+      "name": "Test User",
+      "uuid": "user-uuid-1",
+      "isAdmin": true,
+      "changePassword": false,
+      "userRights": 2047
+    }
+  },
+  "lastModified": "2025-01-01T00:00:00.000Z",
+  "times": {
+    "lastModified": 1704067200
+  },
+  "operatingModes": {},
+  "autopilot": {},
+  "messageCenter": {},
+  "favorites": {},
+  "weather": {},
+  "weatherServer": {},
+  "pointDescs": {},
+  "temperaturePage": {},
+  "mediaServer": {}
+}

@@ -72,7 +72,7 @@ export class ToolRegistry {
  * Decorator factory for MCP tools
  * @param metadata Tool metadata including description and input schema
  */
-export function tool(metadata: ToolMetadata): MethodDecorator {
+export function Tool(metadata: ToolMetadata): MethodDecorator {
   return function (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     target: any,

@@ -8,7 +8,7 @@ import {
 import type { AbstractControlType } from './loxone-system/control-types/AbstractControlType.js';
 import type { StatisticsResponse } from './loxone-system/types/statistics.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-import { tool } from '../mcp-helpers/index.js';
+import { Tool } from '../mcp-helpers/index.js';
 
 export class LoxoneConnectionTools {
   private system: LoxoneSystem;
@@ -25,7 +25,7 @@ export class LoxoneConnectionTools {
     await this.system.shutdown();
   }
 
-  @tool({
+  @Tool({
     description: 'Get all rooms from Smart Home',
     inputSchema: {
       type: 'object',
@@ -38,7 +38,7 @@ export class LoxoneConnectionTools {
     return this.system.controlManager.getRooms();
   }
 
-  @tool({
+  @Tool({
     description: 'Get all categories from Smart Home',
     inputSchema: {
       type: 'object',
@@ -51,7 +51,7 @@ export class LoxoneConnectionTools {
     return this.system.controlManager.getCategories();
   }
 
-  @tool({
+  @Tool({
     description: 'Get controls with optional room/category filter. Returns controls with their current state values and available commands.',
     inputSchema: {
       type: 'object',
@@ -74,7 +74,7 @@ export class LoxoneConnectionTools {
     return this.system.controlManager.getControls(roomUuid, categoryUuid);
   }
 
-  @tool({
+  @Tool({
     description: 'Get one Control. Returns control with their current state values and available commands.',
     inputSchema: {
       type: 'object',
@@ -93,7 +93,7 @@ export class LoxoneConnectionTools {
     return this.system.controlManager.getControl(uuid);
   }
 
-  @tool({
+  @Tool({
     description: 'Send a command to a control',
     inputSchema: {
       type: 'object',
@@ -127,7 +127,7 @@ export class LoxoneConnectionTools {
     };
   }
 
-  @tool({
+  @Tool({
     description: 'Get historical data for controls with statistics enabled. Returns aggregated data for easy analysis.',
     inputSchema: {
       type: 'object',

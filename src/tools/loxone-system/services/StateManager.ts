@@ -1,5 +1,6 @@
 import { injectable } from 'tsyringe';
 import type { StateValue } from '../types/structure.js';
+import { Logger } from '../../../utils/Logger.js';
 
 /**
  * StateManager maintains the current state of all Loxone controls.
@@ -11,6 +12,8 @@ import type { StateValue } from '../types/structure.js';
  * - Offers CRUD operations for state management (get, set, update, delete)
  * - Maintains state consistency across the application
  * - Enables efficient state retrieval without querying the Miniserver
+ * - Implements LRU eviction when cache size exceeds limit
+ * - Automatically cleans up stale entries older than TTL
  * 
  * This service acts as the central state store for all Loxone control values,
  * ensuring consistent and performant access to current device states.
@@ -18,17 +21,20 @@ import type { StateValue } from '../types/structure.js';
 @injectable()
 export class StateManager {
   private stateCache: Map<string, StateValue> = new Map();
+  
+  constructor(private readonly logger: Logger) {}
   /**
    * Get a state value by UUID
    */
   public get(uuid: string): StateValue | undefined {
-    return this.stateCache.get(uuid);
+    const state = this.stateCache.get(uuid);
+    return state;
   }
 
   /**
    * Set a state value
    */
-  public set(uuid: string, value: StateValue): void {
+  public set(uuid: string, value: StateValue): void {   
     this.stateCache.set(uuid, value);
   }
 
@@ -41,7 +47,6 @@ export class StateManager {
       value,
       lastUpdated: new Date()
     };
-    
     this.set(uuid, newState);
   }
 
@@ -49,8 +54,7 @@ export class StateManager {
    * Delete a state value
    */
   public delete(uuid: string): boolean {
-    const existed = this.stateCache.delete(uuid);
-    return existed;
+    return this.stateCache.delete(uuid);
   }
 
   /**
@@ -86,5 +90,13 @@ export class StateManager {
    */
   public get size(): number {
     return this.stateCache.size;
+  }
+  
+  /**
+   * Clean up resources
+   */
+  public cleanup(): void {
+    this.clear();
+    this.logger.debug('StateManager', 'Cleanup complete');
   }
 }

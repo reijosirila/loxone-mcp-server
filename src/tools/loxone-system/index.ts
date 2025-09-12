@@ -97,6 +97,9 @@ export class LoxoneSystem {
 
   public async shutdown(): Promise<void> {
     this.logger.info('LoxoneSystem', 'Shutting down...');
+    // Clean up services in reverse order of dependency
+    this.eventHandlerService.cleanup();
+    this.stateManager.cleanup();
     await this.connectionManager.close();
     this.initialized = false;
     this.logger.info('LoxoneSystem', 'Shutdown complete');

@@ -146,3 +146,4 @@ vite.config.ts.timestamp-*
 .vscode/*
 
 run.sh
+.CLAUDE.md

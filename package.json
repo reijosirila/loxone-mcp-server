@@ -1,42 +1,74 @@
 {
-  "name": "loxone-mcp-server",
-  "version": "1.0.0",
+  "name": "@reijosirila/loxone-mcp-server",
+  "version": "0.0.0",
   "description": "MCP server for Loxone home automation",
-  "main": "dist/server.js",
+  "main": "dist/stdio-server.js",
   "bin": {
-    "loxone-mcp": "./dist/server.js"
+    "loxone-mcp": "./dist/stdio-server.js"
   },
   "type": "module",
+  "files": [
+    "dist/**/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/server.js",
-    "dev": "tsx src/server.ts",
+    "dev": "LOG_LEVEL=2 nodemon --exec \"node --import ./nodemon.mjs\" --ext ts --watch src src/server.ts",
     "watch": "tsc --watch",
     "lint": "eslint src/**/*.ts",
-    "lint:fix": "eslint src/**/*.ts --fix"
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "test": "NODE_OPTIONS=\"--experimental-vm-modules\" jest",
+    "test:watch": "NODE_OPTIONS=\"--experimental-vm-modules\" jest --watch",
+    "test:coverage": "NODE_OPTIONS=\"--experimental-vm-modules\" jest --coverage"
   },
   "keywords": [
     "mcp",
     "loxone",
-    "home-automation"
+    "home-automation",
+    "LLM",
+    "chatGPT",
+    "claude",
+    "gemini"
   ],
   "author": "Reijo Sirila <reijo@sirila.ee>",
   "license": "AGPL-3.0",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.18.0",
     "dayjs": "^1.11.18",
-    "dotenv": "^17.2.1",
-    "loxone-ts-api": "^1.0.0",
+    "dotenv": "^17.2.2",
+    "loxone-ts-api": "^1.3.1",
     "reflect-metadata": "^0.2.2",
     "sprintf-js": "^1.1.3",
     "tsyringe": "^4.10.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
+    "@jest/globals": "^30.1.2",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.3.1",
     "@types/sprintf-js": "^1.1.4",
-    "@typescript-eslint/eslint-plugin": "^8.42.0",
-    "@typescript-eslint/parser": "^8.42.0",
-    "eslint": "^9.34.0",
+    "@typescript-eslint/eslint-plugin": "^8.43.0",
+    "@typescript-eslint/parser": "^8.43.0",
+    "eslint": "^9.35.0",
+    "jest": "^30.1.3",
+    "nodemon": "^3.1.10",
+    "ts-jest": "^29.4.1",
     "typescript": "^5.0.0"
-  }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/reijosirila/loxone-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/reijosirila/loxone-mcp-server/issues"
+  },
+  "homepage": "https://github.com/reijosirila/loxone-mcp-server#readme"
 }

@@ -19,5 +19,5 @@
     "emitDecoratorMetadata": true
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "old", "test-*.js"]
+  "exclude": ["node_modules", "dist", "old", "test-*.js", "tests", "**/*.test.ts", "**/*.spec.ts"]
 }

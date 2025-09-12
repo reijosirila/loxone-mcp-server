@@ -67,7 +67,7 @@ export class ControlTypeFactory {
   }
   
   static create(uuid: string, control: LoxoneControl, structure: LoxoneStructureFile, stateCache: Map<string, StateValue>): AbstractControlType {
-    const type = this.mapControlType(control.type);
+    const type = this.mapControlType(control?.type || '');
     let instance: AbstractControlType;
     
     switch (type) {
