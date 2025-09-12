@@ -191,7 +191,7 @@ Implementing new controls is straightforward using the `AbstractControlType` bas
 The transport can be configured using the `MCP_TRANSPORT` environment variable:
 
 - `stdio` (default): Standard input/output transport
-- `http`: HTTP server with SSE support at `/mcp` endpoint
+- `http`: HTTP server with Streamable HTTP support at `/mcp` endpoint
 
 ## Connection Options
 
