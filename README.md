@@ -13,6 +13,68 @@ Temporarily disabled ventilation and asked to analyze air quality impact and gen
 - **Climate Control**: Manage ventilation, heating, and cooling systems
 - **Environmental Monitoring**: Generate reports on indoor climate conditions (temperature, humidity, CO2 levels)
 
+## Quick usage guide
+
+### Using npm package (recommended)
+
+To use npm package, minimum nodejs 20 is required. 
+
+First install the package globally:
+
+```bash
+npm install -g @reijosirila/loxone-mcp-server
+```
+
+Add to your Claude `claude_desktop_config.json` or any other MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "loxone": {
+      "command": "loxone-mcp-server",
+      "env": {
+        "LOXONE_HOST": "192.168.1.100",
+        "LOXONE_USERNAME": "your-username",
+        "LOXONE_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+#### Using Docker Hub image
+
+First pull the image:
+
+```bash
+docker pull reijosirila/loxone-mcp-server
+```
+
+Then add to your Claude `claude_desktop_config.json` or any other MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "loxone": {
+      "command": "docker",
+      "args": [
+        "run", "--rm", "-i",
+        "-e", "LOXONE_HOST",
+        "-e", "LOXONE_USERNAME",
+        "-e", "LOXONE_PASSWORD",
+        "reijosirila/loxone-mcp-server"
+      ],
+      "env": {
+        "LOXONE_HOST": "192.168.1.100",
+        "LOXONE_USERNAME": "your-username",
+        "LOXONE_PASSWORD": "your-password"
+      }
+    }
+  }
+}
+```
+
+
 ## Loxone Statistics Support
 
 The MCP server supports Loxone Statistics, which aggregates historical data into smaller portions optimized for AI analysis. This allows for efficient analysis of trends and patterns in your smart home data.
@@ -107,7 +169,7 @@ The MCP server supports Loxone Statistics, which aggregates historical data into
 
 Implementing new controls is straightforward using the `AbstractControlType` base class. Each control type follows a consistent pattern, making it easy to add support for additional Loxone controls.
 
-📚 **Official Documentation**: [Loxone Structure File Documentation](https://www.loxone.com/wp-content/uploads/datasheets/StructureFile.pdf)
+📚 **Loxone Official Documentation**: [Loxone Structure File Documentation](https://www.loxone.com/wp-content/uploads/datasheets/StructureFile.pdf)
 
 **Contributions are welcome!** If you need a control that's not yet implemented, feel free to submit a pull request.
 
@@ -115,7 +177,7 @@ Implementing new controls is straightforward using the `AbstractControlType` bas
 
 - **Miniserver v1**: ✅ Fully supported (local and remote connections)
 - **Miniserver v2**: ⚠️ Local connection only
-  - v2 should work but is not fully tested
+  - v2 should work but is not tested
   - Remote connection to v2 is not currently supported due to SSL encryption requirements
   - The underlying client library (`loxone-ts-api`) doesn't have SSL support implemented yet
 
@@ -123,8 +185,13 @@ Implementing new controls is straightforward using the `AbstractControlType` bas
 
 ## Supported MCP Transports
 
-- **Stdio**: ✅ Fully supported (used with Claude Desktop)
-- **Streamable HTTP**: 🚧 Coming soon
+- **Stdio**: ✅ Fully supported
+- **HTTP**: ✅ Fully supported (Express server with `/mcp` endpoint)
+
+The transport can be configured using the `MCP_TRANSPORT` environment variable:
+
+- `stdio` (default): Standard input/output transport
+- `http`: HTTP server with SSE support at `/mcp` endpoint
 
 ## Connection Options
 
@@ -144,48 +211,31 @@ cd loxone-mcp-server
 docker build -t loxone-mcp-server .
 ```
 
-### Running with Claude Desktop
-
-To use this MCP server with Claude Desktop, add the following to your Claude configuration file:
-
-**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`  
-**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`  
-**Linux:** `~/.config/claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "loxone": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "-e", "LOXONE_HOST",
-        "-e", "LOXONE_USERNAME",
-        "-e", "LOXONE_PASSWORD",
-        "loxone-mcp-server"
-      ],
-      "env": {
-        "LOXONE_HOST": "your-loxone-ip",
-        "LOXONE_USERNAME": "your-username",
-        "LOXONE_PASSWORD": "your-password"
-      }
-    }
-  }
-}
-```
-
 ### Environment Variables
 
-Create a `.env` file with your Loxone credentials:
+You can also create a `.env` file with your Loxone credentials and configuration:
 
 ```env
+# Loxone connection settings
 LOXONE_HOST=192.168.1.100
 LOXONE_USERNAME=admin
 LOXONE_PASSWORD=your-password
 
-# or if you are connecting over the internet using loxone DNS
-# this will auto discovery loxone external url and port and tries to connect there
+# Or connect over the internet using Loxone DNS
+# This will auto-discover Loxone external URL and port
 # LOXONE_SERIAL_NUMBER=
+
+# MCP Transport configuration
+# Options: stdio (default), http
+MCP_TRANSPORT=stdio
+
+# HTTP server port (only used when MCP_TRANSPORT=http)
+# Default: 3000
+PORT=3000
+
+# Log level (0=ERROR, 1=WARN, 2=INFO, 3=DEBUG)
+# Default: 1 for stdio, 2 for http
+LOG_LEVEL=2
 ```
 
 ### Alternative: Running without Docker
@@ -222,10 +272,89 @@ If you prefer to run without Docker, you can use Node.js directly:
 ```bash
 # Installation
 npm install
+
 # Build
 npm run build
-# Run
+
+# Run with stdio transport (default)
 npm start
+
+# Run with HTTP transport
+MCP_TRANSPORT=http npm start
+# or
+npm run start:http
+
+# Development mode
+npm run dev          # stdio transport
+npm run dev:http     # Streamable HTTP transport
+```
+
+### Streamable HTTP Transport Usage
+
+When using Streamable HTTP transport, the server listens on port 3000 by default (configurable via `PORT` or `MCP_PORT` environment variable):
+
+- **MCP Endpoint**: `http://localhost:3000/mcp`
+- **Health Check**: `http://localhost:3000/health` (no authentication required)
+
+#### API Key Authentication
+
+The Streamable HTTP server supports optional API key authentication via the `MCP_API_KEY` environment variable:
+
+```bash
+# Set API key for secure access
+MCP_API_KEY=your-secure-api-key-here MCP_TRANSPORT=http npm start
+```
+
+When configured, the API key can be provided in two ways:
+
+1. **Bearer Token**: `Authorization: Bearer your-secure-api-key-here`
+2. **X-API-Key Header**: `X-API-Key: your-secure-api-key-here`
+
+If `MCP_API_KEY` is not set, the server will be publicly accessible (useful for development or when behind a reverse proxy).
+
+Example Claude Desktop/Gemini configuration for HTTP transport:
+
+```json
+{
+  "mcpServers": {
+    "loxone-http": {
+      "httpUrl": "http://localhost:3000/mcp",
+      "description": "Loxone Smart Home MCP Server (HTTP)"
+    }
+  }
+}
+```
+
+Example with API key authentication (when connecting to a remote server):
+
+```json
+{
+  "mcpServers": {
+    "loxone-http-secure": {
+      "httpUrl": "https://your-server.com/mcp",
+      "headers": {
+        "Authorization": "Bearer your-secure-api-key-here"
+      },
+      "description": "Loxone Smart Home MCP Server (Secure HTTP)"
+    }
+  }
+}
+```
+
+Or using X-API-Key header:
+
+```json
+{
+  "mcpServers": {
+    "loxone-http-secure": {
+      "httpUrl": "https://your-server.com/mcp",
+      "headers": {
+        "X-API-Key": "your-secure-api-key-here"
+      },
+      "description": "Loxone Smart Home MCP Server (Secure HTTP)"
+    }
+  }
+}
 ```
 
 ## License

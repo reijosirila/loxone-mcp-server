@@ -2,6 +2,8 @@ import { LoxoneConfig } from './tools/loxone-system/types/structure.js';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import type { LoxoneHttpServer as LoxoneHttpServerType } from './http-server.js';
+import type { LoxoneStdioServer as LoxoneStdioServerType } from './stdio-server.js';
 
 // Load environment variables
 const __filename = fileURLToPath(import.meta.url);
@@ -23,13 +25,26 @@ const config: Partial<LoxoneConfig> = {
 
 // Main
 (async () => {
+  // Check transport type from environment or command line args
+  const transport = process.env.MCP_TRANSPORT || process.argv[2] || 'stdio';
   
-  // @TODO: if called with arg Stdio otherwise import http transport server
-  const { LoxoneStdioServer } = await import('./stdio-server.js');
-  const server = new LoxoneStdioServer(config);
+  let server: LoxoneHttpServerType | LoxoneStdioServerType | null = null;
   
-  //
-  // Handle graceful shutdo  wn
+  switch (transport.toLowerCase()) {
+    case 'http':
+    case 'streamablehttp':
+      const { LoxoneHttpServer } = await import('./http-server.js');
+      server = new LoxoneHttpServer(config);
+      break;
+    
+    case 'stdio':
+    default:
+      const { LoxoneStdioServer } = await import('./stdio-server.js');
+      server = new LoxoneStdioServer(config);
+      break;
+  }
+  
+  // Handle graceful shutdown
   process.on('SIGINT', async () => {
     await server.stop();
     process.exit(0);
