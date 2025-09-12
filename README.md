@@ -15,9 +15,9 @@ Temporarily disabled ventilation and asked to analyze air quality impact and gen
 
 ## Quick usage guide
 
-### Using npm package (recommended)
+### Using npm package
 
-To use npm package, minimum nodejs 20 is required. 
+To use npm package, minimum nodejs 20 is required.
 
 First install the package globally:
 

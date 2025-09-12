@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { LoxoneConfig } from './tools/loxone-system/types/structure.js';
 import * as dotenv from 'dotenv';
 import { fileURLToPath } from 'url';

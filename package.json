@@ -1,6 +1,6 @@
 {
   "name": "@reijosirila/loxone-mcp-server",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "MCP server for Loxone home automation",
   "main": "dist/stdio-server.js",
   "bin": {
@@ -23,7 +23,6 @@
     "start:http": "MCP_TRANSPORT=http node dist/server.js",
     "dev": "LOG_LEVEL=2 nodemon --exec \"node --import ./nodemon.mjs\" --ext ts --watch src src/server.ts",
     "dev:http": "MCP_TRANSPORT=http LOG_LEVEL=2 nodemon --exec \"node --import ./nodemon.mjs\" --ext ts --watch src src/server.ts",
-    "watch": "tsc --watch",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
     "test": "NODE_OPTIONS=\"--experimental-vm-modules\" jest",
@@ -35,7 +34,7 @@
     "loxone",
     "home-automation",
     "LLM",
-    "chatGPT",
+    "ChatGPT",
     "claude",
     "gemini"
   ],
