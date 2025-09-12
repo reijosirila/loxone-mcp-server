@@ -8,6 +8,7 @@ import { LoxoneConnectionTools } from './tools/index.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
+  InitializeRequestSchema,
   ErrorCode,
   McpError,
 } from '@modelcontextprotocol/sdk/types.js';
@@ -17,8 +18,8 @@ import {
   formatMcpResponse,
   getToolsFromInstance
 } from './mcp-helpers/index.js';
-import express, { type Request, type Response } from 'express';
-import { randomUUID } from 'crypto';
+import express from 'express';
+import { createAuthMiddleware, createJsonMiddleware, createJsonErrorHandler } from './http-middlewares/index.js';
 
 // Register Logger configuration for HTTP transport
 const loggerConfig: LoggerConfig = {
@@ -31,10 +32,10 @@ container.resolve(Logger);
 
 export class LoxoneHttpServer {
   private server: Server;
+  private transport: StreamableHTTPServerTransport;
   private loxone: LoxoneConnectionTools;
   private logger: Logger;
-  private transport?: StreamableHTTPServerTransport;
-  private app?: express.Application;
+  private app: express.Application;
   private httpServer?: ReturnType<express.Application['listen']>;
   private readonly port: number;
   private readonly apiKey?: string;
@@ -44,7 +45,6 @@ export class LoxoneHttpServer {
     this.loxone = new LoxoneConnectionTools(config);
     this.port = port || Number(process.env.PORT || process.env.MCP_PORT) || 3000;
     this.apiKey = process.env.MCP_API_KEY;
-    
     // Initialize MCP server
     this.server = new Server(
       {
@@ -65,12 +65,34 @@ This server provides tools to interact with your Loxone Miniserver for smart hom
 - This is the HTTP transport version of the MCP server`,
       }
     );
-    this.setupHandlers();
+        // Initialize MCP transport
+    this.transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    });
+    // Create Express app
+    this.app = express();
+    this.setupMcpHandlers();
+    this.setupExpressHandlers();
   }
 
-  private setupHandlers(): void {
+  private setupMcpHandlers(): void {
     // Get all tools from the LoxoneConnection instance
     const registeredTools = getToolsFromInstance(this.loxone);
+    
+    // Handle initialize request
+    this.server.setRequestHandler(InitializeRequestSchema, async (_request) => {
+      return {
+        protocolVersion: "2025-03-26",
+        capabilities: {
+          tools: {}
+        },
+        serverInfo: {
+          name: "loxone-mcp-server",
+          version: process.env.npm_package_version || "1.0.0"
+        }
+      };
+    });
     
     // List available tools - dynamically built from decorators
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
@@ -118,67 +140,44 @@ This server provides tools to interact with your Loxone Miniserver for smart hom
     return formatMcpResponse(result);
   }
 
-  /**
-   * Handle MCP requests at the /mcp endpoint
-   */
-  private async handleMcpRequest(req: Request, res: Response): Promise<void> {
-    try {
-      if (!this.transport) {
-        throw new Error('Transport not initialized');
-      }
-
-      await this.transport.handleRequest(req, res, req.body);
-    } catch (error) {
-      this.logger.error('LoxoneHttpServer', 'MCP request handling failed:', error);
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: '2.0',
-          error: {
-            code: -32603,
-            message: 'Internal server error',
-          },
-          id: null,
+  private setupExpressHandlers(): void {
+    // JSON parsing with error handling
+    this.app.use(createJsonMiddleware(this.logger));
+    this.app.use(createJsonErrorHandler(this.logger));
+    // Register authentication middleware for all /mcp routes
+    this.app.use('/mcp', createAuthMiddleware(this.apiKey, this.logger));
+    // Setup routes  
+    this.app.post('/mcp', async (req, res) => {
+        this.logger.info('LoxoneHttpServer', `POST /mcp from ${req.ip}`);
+        this.logger.debug('LoxoneHttpServer', `MCP ${req.method} request:`, {
+          method: req.method,
+          headers: req.headers,
+          contentType: req.headers['content-type'],
+          contentLength: req.headers['content-length'],
+          body: req.body ? JSON.stringify(req.body).substring(0, 500) : 'empty'
         });
+        res.on('finish', () => {
+          this.logger.debug('LoxoneHttpServer', `Response finished: status=${res.statusCode}`);
+        });
+        await this.transport.handleRequest(req, res, req.body);
       }
-    }
-  }
-
-  /**
-   * Middleware to check API key authentication
-   */
-  private authenticateApiKey(req: Request, res: Response, next: express.NextFunction): void {
-    // Skip auth if no API key is configured
-    if (!this.apiKey) {
-      next();
-      return;
-    }
-
-    const authHeader = req.headers.authorization;
-    
-    // Check Bearer token
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.substring(7);
-      if (token === this.apiKey) {
-        next();
-        return;
+    );
+    //
+    this.app.get('/mcp', async (req, res) => {
+        this.logger.info('LoxoneHttpServer', `GET /mcp from ${req.ip}`);
+        await this.transport.handleRequest(req, res, undefined);
       }
-    }
-    
-    // Check X-API-Key header
-    const apiKeyHeader = req.headers['x-api-key'];
-    if (apiKeyHeader === this.apiKey) {
-      next();
-      return;
-    }
-
-    this.logger.warn('LoxoneHttpServer', `Unauthorized access attempt from ${req.ip}`);
-    res.status(401).json({
-      jsonrpc: '2.0',
-      error: {
-        code: -32001,
-        message: 'Unauthorized',
-      },
-      id: null,
+    );
+    //
+    this.app.delete('/mcp', async (req, res) => {
+        this.logger.info('LoxoneHttpServer', `DELETE /mcp from ${req.ip}`);
+        await this.transport.handleRequest(req, res, req.body);
+      }
+    );
+    // Health check endpoint (no auth required)
+    this.app.get('/health', (req, res) => {
+      this.logger.info('LoxoneHttpServer', `GET /health from ${req.ip}`);
+      res.json({ status: 'ok', name: 'loxone-mcp-server', version: process.env.npm_package_version || 'unknown' });
     });
   }
 
@@ -187,99 +186,22 @@ This server provides tools to interact with your Loxone Miniserver for smart hom
     this.logger.info('LoxoneHttpServer', 'Connecting to Loxone...');
     await this.loxone.open();
     this.logger.info('LoxoneHttpServer', 'Connected to Loxone');
-
-    // Create Express app
-    this.app = express();
-    this.app.use(express.json());
-    
     // Log if API key protection is enabled
     if (this.apiKey) {
       this.logger.info('LoxoneHttpServer', 'API key authentication enabled');
     } else {
       this.logger.warn('LoxoneHttpServer', 'API key authentication disabled - server is publicly accessible');
     }
-
-    // Create HTTP transport with stateful mode (session management)
-    this.transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      enableJsonResponse: true,
-    });
-
-    // Connect server to transport
+    // Connect MCP server to transport before starting HTTP server
     await this.server.connect(this.transport);
-
-    // Setup routes with authentication
-    this.app.post('/mcp', 
-      this.authenticateApiKey.bind(this),
-      (req, res) => {
-        this.logger.info('LoxoneHttpServer', `POST /mcp from ${req.ip} - Session: ${req.headers['mcp-session-id'] || 'none'}`);
-        this.handleMcpRequest(req, res).catch(error => {
-          this.logger.error('LoxoneHttpServer', 'Unhandled error in POST /mcp:', error);
-        });
-      }
-    );
-
-    this.app.get('/mcp', 
-      this.authenticateApiKey.bind(this),
-      async (req, res) => {
-        this.logger.info('LoxoneHttpServer', `GET /mcp from ${req.ip} - Session: ${req.headers['mcp-session-id'] || 'none'}`);
-        try {
-          if (!this.transport) {
-            throw new Error('Transport not initialized');
-          }
-          // StreamableHTTPServerTransport can handle GET requests for SSE
-          await this.transport.handleRequest(req, res, undefined);
-        } catch (error) {
-          this.logger.error('LoxoneHttpServer', 'GET /mcp handling failed:', error);
-          res.status(405).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32000,
-              message: 'Method not allowed',
-            },
-            id: null,
-          });
-        }
-      }
-    );
-
-    this.app.delete('/mcp', 
-      this.authenticateApiKey.bind(this),
-      async (req, res) => {
-        this.logger.info('LoxoneHttpServer', `DELETE /mcp from ${req.ip} - Session: ${req.headers['mcp-session-id'] || 'none'}`);
-        try {
-          if (!this.transport) {
-            throw new Error('Transport not initialized');
-          }
-          // StreamableHTTPServerTransport handles DELETE for session termination
-          await this.transport.handleRequest(req, res, req.body);
-        } catch (error) {
-          this.logger.error('LoxoneHttpServer', 'DELETE /mcp handling failed:', error);
-          res.status(500).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32603,
-              message: 'Internal server error',
-            },
-            id: null,
-          });
-        }
-      }
-    );
-
-    // Health check endpoint (no auth required)
-    this.app.get('/health', (req, res) => {
-      this.logger.info('LoxoneHttpServer', `GET /health from ${req.ip}`);
-      res.json({ status: 'ok', name: 'loxone-mcp-server', version: process.env.npm_package_version || 'unknown' });
-    });
-
     // Start listening
     await new Promise<void>((resolve, reject) => {
-      this.httpServer = this.app!.listen(this.port, () => {
+      this.httpServer = this.app.listen(this.port, () => {
         this.logger.info('LoxoneHttpServer', `MCP HTTP server listening on ::${this.port}/mcp`);
+        this.httpServer!.removeListener('error', reject);
         resolve();
       });
-      this.httpServer!.on('error', reject);
+      this.httpServer.once('error', reject);
     });
   }
 
@@ -297,7 +219,6 @@ This server provides tools to interact with your Loxone Miniserver for smart hom
       this.loxone.close(),
       this.server.close()
     ]);
-    
     this.logger.info('LoxoneHttpServer', 'Shutdown complete');
   }
 }

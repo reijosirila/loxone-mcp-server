@@ -18,8 +18,22 @@ export class Logger {
   private logLevel: LogLevel;
   
   constructor(@inject('LoggerConfig') private config: LoggerConfig) {
-    const envLevel = process.env.LOG_LEVEL?.toUpperCase();
-    this.logLevel = config.level ?? (LogLevel[envLevel as keyof typeof LogLevel] ?? LogLevel.INFO);
+    const envLevel = process.env.LOG_LEVEL;
+    let parsedLevel = LogLevel.INFO;
+    
+    if (envLevel) {
+      const numLevel = Number(envLevel);
+      if (!isNaN(numLevel) && numLevel >= 0 && numLevel <= 3) {
+        parsedLevel = numLevel as LogLevel;
+      } else {
+        const upperLevel = envLevel.toUpperCase();
+        if (upperLevel in LogLevel) {
+          parsedLevel = LogLevel[upperLevel as keyof typeof LogLevel] as LogLevel;
+        }
+      }
+    }
+    
+    this.logLevel = config.level ?? parsedLevel;
 
     if (this.config.transport === 'stdio') {
       // Suppress ALL console.log output except error to keep stdout clean for MCP
