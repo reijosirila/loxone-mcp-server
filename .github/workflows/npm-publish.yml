@@ -4,6 +4,16 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version bump type (patch, minor, major)'
+        required: false
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 jobs:
   build-and-publish:
@@ -11,7 +21,6 @@ jobs:
     
     permissions:
       contents: read
-      packages: write
       
     steps:
       - uses: actions/checkout@v4
@@ -25,21 +34,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
         
+      - name: Run linting
+        run: npm run lint
+        
       - name: Run tests
         run: npm test
-        continue-on-error: true
         
       - name: Build
         run: npm run build
+        
+      - name: Version bump (if workflow_dispatch)
+        if: github.event_name == 'workflow_dispatch'
+        run: npm version ${{ github.event.inputs.version }} --no-git-tag-version
         
       - name: Publish to NPM
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          
-      - name: Publish to GitHub Packages
-        run: |
-          npm config set @reijosirila:registry https://npm.pkg.github.com
-          npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
