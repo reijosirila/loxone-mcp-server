@@ -312,6 +312,10 @@ When configured, the API key can be provided in two ways:
 
 If `MCP_API_KEY` is not set, the server will be publicly accessible (useful for development or when behind a reverse proxy).
 
+#### Internet Access Security
+
+⚠️ **Important**: If you're exposing the HTTP server over the internet, always use SSL offload with a reverse proxy (e.g., nginx) to secure the connection.
+
 Example Claude Desktop/Gemini configuration for HTTP transport:
 
 ```json
