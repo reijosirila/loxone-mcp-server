@@ -33,6 +33,7 @@ const config: Partial<LoxoneConfig> = {
   
   switch (transport.toLowerCase()) {
     case 'http':
+    case 'streamable-http':
     case 'streamablehttp':
       const { LoxoneHttpServer } = await import('./http-server.js');
       server = new LoxoneHttpServer(config);
