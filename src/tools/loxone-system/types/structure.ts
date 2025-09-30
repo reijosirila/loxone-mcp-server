@@ -64,7 +64,6 @@ export enum ControlType {
   EnergyManager = 'EnergyManager',
   EnergyManager2 = 'EnergyManager2',
   EnergyFlowMonitor = 'EnergyFlowMonitor',
-  EFM = 'EFM',
   Fronius = 'Fronius',
   Heatmixer = 'Heatmixer',
   Hourcounter = 'Hourcounter',
