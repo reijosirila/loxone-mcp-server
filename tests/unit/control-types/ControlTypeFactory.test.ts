@@ -67,11 +67,11 @@ describe('ControlTypeFactory', () => {
         ['LightControllerV2', ControlType.LightControllerV2],
         ['InfoOnlyDigital', ControlType.InfoOnlyDigital],
         ['InfoOnlyAnalog', ControlType.InfoOnlyAnalog],
-        ['TextInput', ControlType.TextInput],
-        ['Webpage', ControlType.Webpage],
+        ['TextInput', ControlType.TextState],  // TextInput is an alias for TextState
+        ['Webpage', ControlType.TextState],    // Webpage is an alias for TextState
         ['Radio', ControlType.Radio],
         ['TextState', ControlType.TextState],
-        ['EFM', ControlType.EFM],
+        ['EFM', ControlType.EnergyFlowMonitor],  // EFM is an alias for EnergyFlowMonitor
         ['Meter', ControlType.Meter],
         ['SpotPriceOptimizer', ControlType.SpotPriceOptimizer]
       ];
