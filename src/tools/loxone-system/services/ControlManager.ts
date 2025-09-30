@@ -1,5 +1,5 @@
 import { injectable } from 'tsyringe';
-import { type StructureFile, type Room, type Category, ControlType } from '../types/structure.js';
+import { type StructureFile, type Room, type Category } from '../types/structure.js';
 import { AbstractControlType } from '../control-types/AbstractControlType.js';
 import { ControlTypeFactory } from '../control-types/ControlTypeFactory.js';
 import { ConnectionManager } from './ConnectionManager.js';
@@ -7,63 +7,6 @@ import { StateManager } from './StateManager.js';
 import { Logger } from '../../../utils/Logger.js';
 import { isLoxoneControl } from '../types/control-structure.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-
-const UNSUPPORTED_CONTROLS: (ControlType | string)[] = [
-  // Not yet implemented controls
-  ControlType.AalEmergency,
-  ControlType.AalSmartAlarm,
-  ControlType.AlarmChain,
-  ControlType.AlarmClock,
-  ControlType.Application,
-  ControlType.CarCharger,
-  ControlType.ClimateController,
-  ControlType.ClimateControllerUS,
-  ControlType.Daytimer,
-  ControlType.DigitalInput,
-  ControlType.EnergyManager,
-  ControlType.EnergyManager2,
-  ControlType.EnergyFlowMonitor,
-  ControlType.EFM,
-  ControlType.Fronius,
-  ControlType.Heatmixer,
-  ControlType.Hourcounter,
-  ControlType.InfoOnlyText,
-  ControlType.IRoomController,
-  ControlType.Intercom,
-  ControlType.IntercomV2,
-  ControlType.Irrigation,
-  ControlType.LightsceneRGB,
-  ControlType.LoadManager,
-  ControlType.MailBox,
-  ControlType.MsShortcut,
-  ControlType.NFCCodeTouch,
-  ControlType.PoolController,
-  ControlType.PowerUnit,
-  ControlType.PresenceDetector,
-  ControlType.PulseAt,
-  ControlType.Remote,
-  ControlType.Sauna,
-  ControlType.Sequential,
-  ControlType.SmokeAlarm,
-  ControlType.SolarPumpController,
-  ControlType.SpotPriceOptimizer,
-  ControlType.StatusMonitor,
-  ControlType.SteakThermo,
-  ControlType.SystemScheme,
-  ControlType.TextInput,
-  ControlType.TimedSwitch,
-  ControlType.Tracker,
-  ControlType.UpDownLeftRightDigital,
-  ControlType.UpDownLeftRightAnalog,
-  ControlType.ValueSelector,
-  ControlType.Ventilation,
-  ControlType.Wallbox2,
-  ControlType.WallboxManager,
-  ControlType.Webpage,
-  ControlType.Window,
-  ControlType.WindowMonitor,
-  ControlType.ACControl
-];
 
 /**
  * ControlManager manages Loxone control devices and their interactions.
@@ -76,7 +19,7 @@ const UNSUPPORTED_CONTROLS: (ControlType | string)[] = [
  * - Executes control commands (pulse, on, off, value changes)
  * - Retrieves current control states and detailed information
  * - Handles control type-specific operations through AbstractControlType implementations
- * - Filters out unsupported control types
+ * - Filters out unsupported control types using ControlTypeFactory.isSupported
  * 
  * This service acts as the main interface for interacting with Loxone devices.
  */
@@ -119,10 +62,11 @@ export class ControlManager  {
     
     for (const [uuid, control] of Object.entries(this.structure.controls)) {
       // Skip unsupported control types
-      if (UNSUPPORTED_CONTROLS.includes(control.type)) {
+      if (!isLoxoneControl(control) || !ControlTypeFactory.isSupported(control)) {
+        this.logger.warn('ControlManager', `Skipping unsupported control: ${uuid}`, control);
         continue;
       }
-      
+
       // Apply filters
       if (roomUuid && control.room !== roomUuid) continue;
       if (categoryUuid && control.cat !== categoryUuid) continue;

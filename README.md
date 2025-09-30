@@ -113,6 +113,10 @@ The MCP server supports Loxone Statistics, which aggregates historical data into
 | Slider | ✅ | Full | ✅ |
 | Switch | ✅ | Full | ✅ |
 | TextState | ✅ | Full | ✅ |
+| EnergyFlowMonitor | ✅ | Full | ✅ |
+| EnergyManager2 | ✅ | Full | ❌ |
+| IntercomV2 | ✅ | Full | ❌ |
+| Sauna | ✅ | Full | ❌ |
 | **Not Implemented Controls** | | | |
 | AalEmergency | ❌ | - | ❌ |
 | AalSmartAlarm | ❌ | - | ❌ |
@@ -124,15 +128,12 @@ The MCP server supports Loxone Statistics, which aggregates historical data into
 | ClimateController | ❌ | - | ❌ |
 | ClimateControllerUS | ❌ | - | ❌ |
 | Daytimer | ❌ | - | ❌ |
-| EnergyFlowMonitor | ❌ | - | ❌ |
 | EnergyManager | ❌ | - | ❌ |
-| EnergyManager2 | ❌ | - | ❌ |
 | Fronius | ❌ | - | ❌ |
 | Heatmixer | ❌ | - | ❌ |
 | Hourcounter | ❌ | - | ❌ |
 | InfoOnlyText | ❌ | - | ❌ |
 | Intercom | ❌ | - | ❌ |
-| IntercomV2 | ❌ | - | ❌ |
 | Irrigation | ❌ | - | ❌ |
 | LightsceneRGB | ❌ | - | ❌ |
 | LoadManager | ❌ | - | ❌ |
@@ -144,7 +145,6 @@ The MCP server supports Loxone Statistics, which aggregates historical data into
 | PresenceDetector | ❌ | - | ❌ |
 | PulseAt | ❌ | - | ❌ |
 | Remote | ❌ | - | ❌ |
-| Sauna | ❌ | - | ❌ |
 | Sequential | ❌ | - | ❌ |
 | SmokeAlarm | ❌ | - | ❌ |
 | SolarPumpController | ❌ | - | ❌ |

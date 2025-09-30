@@ -27,158 +27,103 @@ import { CentralJalousieControl } from './CentralJalousieControl.js';
 import { CentralWindowControl } from './CentralWindowControl.js';
 import { TextStateControl } from './TextStateControl.js';
 import { GenericControl } from './GenericControl.js';
+import { IntercomV2Control } from './IntercomV2Control.js';
+import { SaunaControl } from './SaunaControl.js';
+import { EnergyManager2Control } from './EnergyManager2Control.js';
+import { EnergyFlowMonitorControl } from './EnergyFlowMonitorControl.js';
+
+export type ControlConstructor = new (
+  uuid: string,
+  control: LoxoneControl,
+  structure: LoxoneStructureFile,
+  stateCache: Map<string, StateValue>
+) => AbstractControlType;
 
 export class ControlTypeFactory {
-  private static typeMap: { [key: string]: ControlType } = {
-    'Switch': ControlType.Switch,
-    'Dimmer': ControlType.Dimmer,
-    'Jalousie': ControlType.Jalousie,
-    'Gate': ControlType.Gate,
-    'DigitalInput': ControlType.DigitalInput,
-    'Pushbutton': ControlType.Pushbutton,
-    'Slider': ControlType.Slider,
-    'Intercom': ControlType.Intercom,
-    'IRoomControllerV2': ControlType.IRoomControllerV2,
-    'IRoomController': ControlType.IRoomController,
-    'Sauna': ControlType.Sauna,
-    'Alarm': ControlType.Alarm,
-    'CentralAlarm': ControlType.CentralAlarm,
-    'AudioZone': ControlType.AudioZone,
-    'ColorPicker': ControlType.ColorPicker,
-    'ColorPickerV2': ControlType.ColorPickerV2,
-    'LightController': ControlType.LightController,
-    'InfoOnlyDigital': ControlType.InfoOnlyDigital,
-    'InfoOnlyAnalog': ControlType.InfoOnlyAnalog,
-    'TextInput': ControlType.TextInput,
-    'Webpage': ControlType.Webpage,
-    'EIBDimmer': ControlType.EIBDimmer,
-    'LightControllerV2': ControlType.LightControllerV2,
-    'Radio': ControlType.Radio,
-    'TextState': ControlType.TextState,
-    'AudioZoneV2': ControlType.AudioZoneV2,
-    'CentralAudioZone': ControlType.CentralAudioZone,
-    'EFM': ControlType.EFM,
-    'Meter': ControlType.Meter,
-    'SpotPriceOptimizer': ControlType.SpotPriceOptimizer
+  // Map between ControlType enum and implementation class
+  private static readonly controlTypeMap = new Map<ControlType, ControlConstructor>([
+    [ControlType.Switch, SwitchControl],
+    [ControlType.Dimmer, DimmerControl],
+    [ControlType.EIBDimmer, EIBDimmerControl],
+    [ControlType.ColorPicker, ColorPickerControl],
+    [ControlType.ColorPickerV2, ColorPickerV2Control],
+    [ControlType.LightController, LightController],
+    [ControlType.LightControllerV2, LightControllerV2Control],
+    [ControlType.Jalousie, JalousieControl],
+    [ControlType.Gate, GateControl],
+    [ControlType.Slider, SliderControl],
+    [ControlType.Pushbutton, PushbuttonControl],
+    [ControlType.Alarm, AlarmControl],
+    [ControlType.CentralAlarm, CentralAlarmControl],
+    [ControlType.Meter, MeterControl],
+    [ControlType.InfoOnlyDigital, InfoOnlyDigitalControl],
+    [ControlType.DigitalInput, InfoOnlyDigitalControl],
+    [ControlType.InfoOnlyAnalog, InfoOnlyAnalogControl],
+    [ControlType.Radio, RadioControl],
+    [ControlType.IRoomControllerV2, IRoomControllerV2Control],
+    [ControlType.IRoomController, IRoomControllerV2Control],
+    [ControlType.AudioZone, AudioZoneControl],
+    [ControlType.AudioZoneV2, AudioZoneV2Control],
+    [ControlType.CentralAudioZone, CentralAudioZoneControl],
+    [ControlType.CentralGate, CentralGateControl],
+    [ControlType.CentralJalousie, CentralJalousieControl],
+    [ControlType.CentralWindow, CentralWindowControl],
+    [ControlType.TextState, TextStateControl],
+    [ControlType.IntercomV2, IntercomV2Control],
+    [ControlType.Sauna, SaunaControl],
+    [ControlType.EnergyManager2, EnergyManager2Control],
+    [ControlType.EnergyFlowMonitor, EnergyFlowMonitorControl],
+  ]);
+
+  // Backward compatibility aliases
+  private static readonly typeAliases: Record<string, ControlType> = {
+    'EFM': ControlType.EnergyFlowMonitor,
+    'TextInput': ControlType.TextState,
+    'Webpage': ControlType.TextState,
   };
-  
+
+  /**
+   * Map control type string from Loxone to ControlType enum
+   * @param typeString The control type string from Loxone
+   * @returns The mapped ControlType enum value
+   */
   static mapControlType(typeString: string): ControlType {
-    return this.typeMap[typeString] || ControlType.Unknown;
+    // Check for aliases first
+    if (this.typeAliases[typeString]) {
+      return this.typeAliases[typeString];
+    }
+
+    // Direct enum value lookup - the enum value is the same as the string
+    const enumValue = ControlType[typeString as keyof typeof ControlType];
+    return enumValue || ControlType.Unknown;
   }
-  
+
+  /**
+   * Check if a control type is supported (has an implementation)
+   * @param control The Loxone control to check
+   * @returns true if the control type has an implementation, false otherwise
+   */
+  static isSupported(control: LoxoneControl): boolean {
+    const type = this.mapControlType(control?.type || '');
+    return type !== ControlType.Unknown && this.controlTypeMap.has(type);
+  }
+
+  /**
+   * Create a control instance based on its type
+   * @param uuid The control UUID
+   * @param control The Loxone control definition
+   * @param structure The Loxone structure file
+   * @param stateCache The state cache map
+   * @returns An instance of the appropriate control type
+   */
   static create(uuid: string, control: LoxoneControl, structure: LoxoneStructureFile, stateCache: Map<string, StateValue>): AbstractControlType {
     const type = this.mapControlType(control?.type || '');
-    let instance: AbstractControlType;
-    
-    switch (type) {
-      case ControlType.Switch:
-        instance = new SwitchControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.Dimmer:
-        instance = new DimmerControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.EIBDimmer:
-        instance = new EIBDimmerControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.ColorPicker:
-        instance = new ColorPickerControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.ColorPickerV2:
-        instance = new ColorPickerV2Control(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.LightController:
-        instance = new LightController(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.LightControllerV2:
-        instance = new LightControllerV2Control(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.Jalousie:
-        instance = new JalousieControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.Gate:
-        instance = new GateControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.Slider:
-        instance = new SliderControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.Pushbutton:
-        instance = new PushbuttonControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.Alarm:
-        instance = new AlarmControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.CentralAlarm:
-        instance = new CentralAlarmControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.Meter:
-        instance = new MeterControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.InfoOnlyDigital:
-      case ControlType.DigitalInput:
-        instance = new InfoOnlyDigitalControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.InfoOnlyAnalog:
-        instance = new InfoOnlyAnalogControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.Radio:
-        instance = new RadioControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.IRoomControllerV2:
-      case ControlType.IRoomController:
-        instance = new IRoomControllerV2Control(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.AudioZone:
-        instance = new AudioZoneControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.AudioZoneV2:
-        instance = new AudioZoneV2Control(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.CentralAudioZone:
-        instance = new CentralAudioZoneControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.CentralGate:
-        instance = new CentralGateControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.CentralJalousie:
-        instance = new CentralJalousieControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.CentralWindow:
-        instance = new CentralWindowControl(uuid, control, structure, stateCache);
-        break;
-      
-      case ControlType.TextState:
-        instance = new TextStateControl(uuid, control, structure, stateCache);
-        break;
-      
-      default:
-        // Return generic control for unknown or unimplemented types
-        instance = new GenericControl(uuid, control, type, structure, stateCache);
-        break;
+    // Get the constructor for this control type
+    const ControlClass = this.controlTypeMap.get(type);
+    if (ControlClass) {
+      return new ControlClass(uuid, control, structure, stateCache);
     }
-    
-    return instance;
+    // Return generic control for unknown or unimplemented types
+    return new GenericControl(uuid, control, type, structure, stateCache);
   }
 }
