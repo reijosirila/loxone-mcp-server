@@ -243,7 +243,13 @@ export class ConnectionManager extends EventEmitter {
     }
   }
 
-  public async fetch(path: string) {
+  // Serialized HTTP queue: Gen1 Miniservers handle very few concurrent HTTP
+  // connections; a hung socket must never block the whole server. Every request
+  // gets a hard timeout and requests are executed one at a time.
+  private fetchChain: Promise<unknown> = Promise.resolve();
+  private readonly FETCH_TIMEOUT_MS = 60000;
+
+  public async fetch(path: string): Promise<Response> {
     if (!this.options) {
       throw new Error('ConnectionManager not initialized');
     }
@@ -251,8 +257,44 @@ export class ConnectionManager extends EventEmitter {
     const auth = Buffer.from(`${this.options.username}:${this.options.password}`).toString('base64');
     const url = `${baseUrl}/${path.startsWith('/') ? path.slice(1) : path}`;
     const headers = { 'Authorization': `Basic ${auth}` };
-    const response = await fetch(url, { headers });
-    return response;
+    const run = async (): Promise<Response> => {
+      try {
+        return await fetch(url, { headers, signal: AbortSignal.timeout(this.FETCH_TIMEOUT_MS) });
+      } catch (err) {
+        this.logger.warn('ConnectionManager', `HTTP fetch failed/timeout for ${path}:`, err);
+        throw new Error(`Miniserver HTTP request failed or timed out (${this.FETCH_TIMEOUT_MS}ms): ${path}`);
+      }
+    };
+    // Chain on previous request regardless of its outcome (never let a failure wedge the queue)
+    const result = this.fetchChain.then(run, run);
+    this.fetchChain = result.catch(() => undefined);
+    return result;
+  }
+
+  /** Reload the structure file from the Miniserver (picks up newly added controls).
+   * Uses plain HTTP (data/LoxAPP3.json) through the serialized, time-boxed fetch queue:
+   * the websocket getStructureFile of the underlying library is only reliable during
+   * the initial connect, and a Miniserver reboot leaves the cache stale. */
+  public async reloadStructure(): Promise<number> {
+    try {
+      const response = await this.fetch('data/LoxAPP3.json');
+      if (!response.ok) {
+        throw new Error(`Miniserver returned HTTP ${response.status} for data/LoxAPP3.json`);
+      }
+      const structure = JSON.parse(await response.text()) as StructureFile;
+      if (!structure || !structure.controls) {
+        throw new Error('Structure file parsed but contains no controls');
+      }
+      this.structure = structure;
+      this.structureLoaded = true;
+      this.emit('structureLoaded', this.structure);
+      this.logger.info('ConnectionManager', `Structure reloaded via HTTP. ${Object.keys(structure.controls).length} controls`);
+      return Object.keys(structure.controls).length;
+    } catch (httpErr) {
+      this.logger.warn('ConnectionManager', 'HTTP structure reload failed, trying websocket:', httpErr);
+      await this.loadStructure();
+      return Object.keys(this.structure?.controls || {}).length;
+    }
   }
 
   public async close() {
