@@ -139,17 +139,44 @@ export class LoxoneConnectionTools {
         period: {
           type: 'string',
           enum: Object.values(StatisticsPeriod),
-          description: 'Time period to retrieve statistics for',
+          description: 'Time period to retrieve statistics for (ignored when from/to are provided)',
+        },
+        from: {
+          type: 'string',
+          description: 'Optional ISO date/time for custom range start, e.g. 2026-07-11T02:00:00',
+        },
+        to: {
+          type: 'string',
+          description: 'Optional ISO date/time for custom range end (defaults to now)',
+        },
+        output: {
+          type: 'number',
+          description: 'Optional output column (1-based) for multi-output statistics files',
         },
       },
       required: ['controlUuid', 'period'],
     },
   })
-  public async getStatistics(args: { controlUuid: string; period: StatisticsPeriod }): Promise<StatisticsResponse> {
-    const { controlUuid, period } = args;
+  public async getStatistics(args: { controlUuid: string; period: StatisticsPeriod; from?: string; to?: string; output?: number }): Promise<StatisticsResponse> {
+    const { controlUuid, period, from, to, output } = args;
     this.isConnected();
     this.isStructureLoaded();
-    return this.system.statisticsService.getStatistics(controlUuid, period);
+    this.system.statisticsService.setOutputColumn(output);
+    return this.system.statisticsService.getStatistics(controlUuid, period, from, to);
+  }
+
+  @Tool({
+    description: 'Reload the Loxone structure file from the Miniserver. Use after adding or renaming controls in Loxone Config so they become visible without restarting.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  })
+  public async reloadStructure(): Promise<{ controls: number; message: string }> {
+    this.isConnected();
+    const controls = await this.system.connectionManager.reloadStructure();
+    return { controls, message: `Structure reloaded: ${controls} controls now visible.` };
   }
   
   private isConnected() {
