@@ -249,7 +249,7 @@ export class ConnectionManager extends EventEmitter {
   private fetchChain: Promise<unknown> = Promise.resolve();
   private readonly FETCH_TIMEOUT_MS = 60000;
 
-  public async fetch(path: string): Promise<Response> {
+  public async fetch(path: string, timeoutMs?: number): Promise<Response> {
     if (!this.options) {
       throw new Error('ConnectionManager not initialized');
     }
@@ -259,7 +259,7 @@ export class ConnectionManager extends EventEmitter {
     const headers = { 'Authorization': `Basic ${auth}` };
     const run = async (): Promise<Response> => {
       try {
-        return await fetch(url, { headers, signal: AbortSignal.timeout(this.FETCH_TIMEOUT_MS) });
+        return await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs ?? this.FETCH_TIMEOUT_MS) });
       } catch (err) {
         this.logger.warn('ConnectionManager', `HTTP fetch failed/timeout for ${path}:`, err);
         throw new Error(`Miniserver HTTP request failed or timed out (${this.FETCH_TIMEOUT_MS}ms): ${path}`);
@@ -277,7 +277,7 @@ export class ConnectionManager extends EventEmitter {
    * the initial connect, and a Miniserver reboot leaves the cache stale. */
   public async reloadStructure(): Promise<number> {
     try {
-      const response = await this.fetch('data/LoxAPP3.json');
+      const response = await this.fetch('data/LoxAPP3.json', 120000);
       if (!response.ok) {
         throw new Error(`Miniserver returned HTTP ${response.status} for data/LoxAPP3.json`);
       }
