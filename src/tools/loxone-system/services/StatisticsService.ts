@@ -317,18 +317,27 @@ export class StatisticsService {
   }
 
   private getMonthsForPeriod(fromTimestamp: number, toTimestamp: number): string[] {
+    // Statistics files are named after the CONTROLLER-LOCAL month (stats/<uuid>.<yyyymm>.xml).
+    // Deriving the month via toISOString() (UTC) skips a whole month for windows starting
+    // near a local month boundary (e.g. local Aug 1st 00:00 = Jul 31st 22:00 UTC -> only the
+    // July file was fetched). Shift timestamps by the controller offset before formatting.
+    const offsetSec = this.parseOffsetSeconds(this.timeService.getControllerTimeOffset());
+    const localYm = (ts: number) => new Date((ts + offsetSec) * 1000).toISOString().slice(0, 7).replace('-', '');
     const months: string[] = [];
-    const fromDate = new Date(fromTimestamp * 1000);
-    const toDate = new Date(toTimestamp * 1000);
-    let currentDate = new Date(fromDate);
-    while (currentDate <= toDate) {
-      const yearMonth = currentDate.toISOString().slice(0, 7).replace('-', '');
-      if (!months.includes(yearMonth)) {
-        months.push(yearMonth);
-      }
-      currentDate.setMonth(currentDate.getMonth() + 1);
+    const endYm = localYm(toTimestamp);
+    let cursor = fromTimestamp;
+    for (let guard = 0; guard < 240; guard++) {
+      const ym = localYm(cursor);
+      if (!months.includes(ym)) months.push(ym);
+      if (ym === endYm) break;
+      cursor += 28 * 86400; // advance safely; dedup handles overlaps
     }
     return months;
+  }
+
+  private parseOffsetSeconds(offset: string): number {
+    const m = offset.match(/([+-])(\d{2}):(\d{2})/);
+    return m ? (m[1] === '+' ? 1 : -1) * (parseInt(m[2]) * 3600 + parseInt(m[3]) * 60) : 0;
   }
 
   private aggregateData(dataPoints: StatisticsDataPoint[], interval: AggregationInterval): AggregatedDataPoint[] {
