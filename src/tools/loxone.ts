@@ -174,7 +174,9 @@ export class LoxoneConnectionTools {
     },
   })
   public async reloadStructure(): Promise<{ controls: number; message: string }> {
-    this.isConnected();
+    // Pas de garde isConnected() : le rechargement passe par HTTP avec ses propres
+    // identifiants et doit rester disponible meme quand le websocket est en cours
+    // de reconnexion — c'est precisement dans ces moments qu'on en a besoin.
     const controls = await this.system.connectionManager.reloadStructure();
     return { controls, message: `Structure reloaded: ${controls} controls now visible.` };
   }
