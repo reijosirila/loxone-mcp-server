@@ -13,7 +13,8 @@
     "inlineSources": true,
     "declaration": false,
     "noEmit": false,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "declarationMap": false
   },
   "ts-node": {
     "esm": true,
@@ -26,6 +27,12 @@
       "allowImportingTsExtensions": false
     }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "include": [
+    "src/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests"
+  ]
 }

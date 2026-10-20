@@ -15,13 +15,22 @@ dotenv.config({
   quiet: true 
 });
 
-// Configuration
+const parseIntEnv = (value: string | undefined): number | undefined => {
+  const n = value ? parseInt(value, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+};
+
+const protocolEnv = process.env.LOXONE_PROTOCOL?.toLowerCase();
+
+// LOXONE_HOST may be an IP, a hostname, or a full base URL such as https://miniserver.example:443
 const config: Partial<LoxoneConfig> = {
   host: process.env.LOXONE_HOST,
   username: process.env.LOXONE_USERNAME,
   password: process.env.LOXONE_PASSWORD,
-  port: process.env.LOXONE_PORT ? parseInt(process.env.LOXONE_PORT) : 80,
+  port: parseIntEnv(process.env.LOXONE_PORT),
+  protocol: protocolEnv === 'https' ? 'https' : protocolEnv === 'http' ? 'http' : undefined,
   serialNumber: process.env.LOXONE_SERIAL_NUMBER || undefined,
+  connectTimeoutMs: parseIntEnv(process.env.LOXONE_CONNECT_TIMEOUT_MS),
 };
 
 // Main

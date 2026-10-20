@@ -31,6 +31,22 @@ import { IntercomV2Control } from './IntercomV2Control.js';
 import { SaunaControl } from './SaunaControl.js';
 import { EnergyManager2Control } from './EnergyManager2Control.js';
 import { EnergyFlowMonitorControl } from './EnergyFlowMonitorControl.js';
+import { TimedSwitchControl } from './TimedSwitchControl.js';
+import { PresenceDetectorControl } from './PresenceDetectorControl.js';
+import { WindowMonitorControl } from './WindowMonitorControl.js';
+import { SmokeAlarmControl } from './SmokeAlarmControl.js';
+import { HourcounterControl } from './HourcounterControl.js';
+import { InfoOnlyTextControl } from './InfoOnlyTextControl.js';
+import { ValueSelectorControl } from './ValueSelectorControl.js';
+import { FroniusControl } from './FroniusControl.js';
+import { TrackerControl } from './TrackerControl.js';
+import { DaytimerControl } from './DaytimerControl.js';
+import { AlarmClockControl } from './AlarmClockControl.js';
+import { IntercomControl } from './IntercomControl.js';
+import { MailBoxControl } from './MailBoxControl.js';
+import { VentilationControl } from './VentilationControl.js';
+import { LoadManagerControl } from './LoadManagerControl.js';
+import { AalControl } from './AalControl.js';
 
 export type ControlConstructor = new (
   uuid: string,
@@ -73,6 +89,26 @@ export class ControlTypeFactory {
     [ControlType.Sauna, SaunaControl],
     [ControlType.EnergyManager2, EnergyManager2Control],
     [ControlType.EnergyFlowMonitor, EnergyFlowMonitorControl],
+    [ControlType.TimedSwitch, TimedSwitchControl],
+    [ControlType.PresenceDetector, PresenceDetectorControl],
+    [ControlType.WindowMonitor, WindowMonitorControl],
+    [ControlType.SmokeAlarm, SmokeAlarmControl],
+    [ControlType.Hourcounter, HourcounterControl],
+    [ControlType.InfoOnlyText, InfoOnlyTextControl],
+    [ControlType.ValueSelector, ValueSelectorControl],
+    [ControlType.UpDownAnalog, ValueSelectorControl],
+    [ControlType.LeftRightAnalog, ValueSelectorControl],
+    [ControlType.UpDownLeftRightAnalog, ValueSelectorControl],
+    [ControlType.Fronius, FroniusControl],
+    [ControlType.Tracker, TrackerControl],
+    [ControlType.Daytimer, DaytimerControl],
+    [ControlType.AlarmClock, AlarmClockControl],
+    [ControlType.Intercom, IntercomControl],
+    [ControlType.MailBox, MailBoxControl],
+    [ControlType.Ventilation, VentilationControl],
+    [ControlType.LoadManager, LoadManagerControl],
+    [ControlType.AalSmartAlarm, AalControl],
+    [ControlType.AalEmergency, AalControl],
   ]);
 
   // Backward compatibility aliases
@@ -99,13 +135,16 @@ export class ControlTypeFactory {
   }
 
   /**
-   * Check if a control type is supported (has an implementation)
-   * @param control The Loxone control to check
-   * @returns true if the control type has an implementation, false otherwise
+   * Whether the control type has a dedicated implementation. Other types are still
+   * exposed read-only through GenericControl.
    */
   static isSupported(control: LoxoneControl): boolean {
     const type = this.mapControlType(control?.type || '');
     return type !== ControlType.Unknown && this.controlTypeMap.has(type);
+  }
+
+  static supportedTypes(): ControlType[] {
+    return Array.from(this.controlTypeMap.keys());
   }
 
   /**

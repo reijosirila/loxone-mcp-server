@@ -2,13 +2,16 @@
 import type { LoxoneControl, LoxoneRoom, LoxoneCategory } from './control-structure.js';
 
 export interface LoxoneConfig {
+  /** IP, hostname, or full base URL (e.g. https://my-miniserver.example:443) */
   host: string;
   username: string;
   password: string;
-  port: number;
-  protocol: 'http' | 'https';
-  wsProtocol: 'ws' | 'wss';
-  serialNumber: string;
+  port?: number;
+  protocol?: 'http' | 'https';
+  /** Miniserver serial number for Loxone cloud discovery when no host is configured */
+  serialNumber?: string;
+  /** How long startup waits for the Miniserver to become ready before failing */
+  connectTimeoutMs?: number;
 }
 
 export interface Room {
@@ -23,9 +26,10 @@ export interface Category {
 }
 
 export enum ControlType {
-  // Implemented Controls
+  // Implemented controls (dedicated control class)
   Switch = 'Switch',
   Dimmer = 'Dimmer',
+  EIBDimmer = 'EIBDimmer',
   Jalousie = 'Jalousie',
   Gate = 'Gate',
   Pushbutton = 'Pushbutton',
@@ -38,7 +42,8 @@ export enum ControlType {
   ColorPickerV2 = 'ColorPickerV2',
   InfoOnlyDigital = 'InfoOnlyDigital',
   InfoOnlyAnalog = 'InfoOnlyAnalog',
-  EIBDimmer = 'EIBDimmer',
+  InfoOnlyText = 'InfoOnlyText',
+  DigitalInput = 'DigitalInput',
   LightController = 'LightController',
   LightControllerV2 = 'LightControllerV2',
   Radio = 'Radio',
@@ -48,62 +53,64 @@ export enum ControlType {
   CentralJalousie = 'CentralJalousie',
   CentralWindow = 'CentralWindow',
   Meter = 'Meter',
+  IRoomController = 'IRoomController',
   IRoomControllerV2 = 'IRoomControllerV2',
-  
-  // Not Yet Implemented Controls
-  AalEmergency = 'AalEmergency',
-  AalSmartAlarm = 'AalSmartAlarm',
-  AlarmChain = 'AlarmChain',
+  IntercomV2 = 'IntercomV2',
+  Intercom = 'Intercom',
+  Sauna = 'Sauna',
+  EnergyManager2 = 'EnergyManager2',
+  EnergyFlowMonitor = 'EnergyFlowMonitor',
+  TimedSwitch = 'TimedSwitch',
+  PresenceDetector = 'PresenceDetector',
+  WindowMonitor = 'WindowMonitor',
+  SmokeAlarm = 'SmokeAlarm',
+  Hourcounter = 'Hourcounter',
+  ValueSelector = 'ValueSelector',
+  UpDownAnalog = 'UpDownAnalog',
+  LeftRightAnalog = 'LeftRightAnalog',
+  UpDownLeftRightAnalog = 'UpDownLeftRightAnalog',
+  Fronius = 'Fronius',
+  Tracker = 'Tracker',
+  Daytimer = 'Daytimer',
   AlarmClock = 'AlarmClock',
+  MailBox = 'MailBox',
+  Ventilation = 'Ventilation',
+  LoadManager = 'LoadManager',
+  AalSmartAlarm = 'AalSmartAlarm',
+  AalEmergency = 'AalEmergency',
+
+  // Known Loxone types without a dedicated class (exposed read-only through GenericControl)
+  AlarmChain = 'AlarmChain',
   Application = 'Application',
   CarCharger = 'CarCharger',
   ClimateController = 'ClimateController',
   ClimateControllerUS = 'ClimateControllerUS',
-  Daytimer = 'Daytimer',
-  DigitalInput = 'DigitalInput',
   EnergyManager = 'EnergyManager',
-  EnergyManager2 = 'EnergyManager2',
-  EnergyFlowMonitor = 'EnergyFlowMonitor',
-  Fronius = 'Fronius',
   Heatmixer = 'Heatmixer',
-  Hourcounter = 'Hourcounter',
-  InfoOnlyText = 'InfoOnlyText',
-  IRoomController = 'IRoomController',
-  Intercom = 'Intercom',
-  IntercomV2 = 'IntercomV2',
   Irrigation = 'Irrigation',
+  LeftRightDigital = 'LeftRightDigital',
   LightsceneRGB = 'LightsceneRGB',
-  LoadManager = 'LoadManager',
-  MailBox = 'MailBox',
   MsShortcut = 'MsShortcut',
   NFCCodeTouch = 'NFCCodeTouch',
   PoolController = 'PoolController',
   PowerUnit = 'PowerUnit',
-  PresenceDetector = 'PresenceDetector',
   PulseAt = 'PulseAt',
   Remote = 'Remote',
-  Sauna = 'Sauna',
   Sequential = 'Sequential',
-  SmokeAlarm = 'SmokeAlarm',
   SolarPumpController = 'SolarPumpController',
   SpotPriceOptimizer = 'SpotPriceOptimizer',
   StatusMonitor = 'StatusMonitor',
   SteakThermo = 'SteakThermo',
   SystemScheme = 'SystemScheme',
   TextInput = 'TextInput',
-  TimedSwitch = 'TimedSwitch',
-  Tracker = 'Tracker',
+  UpDownDigital = 'UpDownDigital',
   UpDownLeftRightDigital = 'UpDownLeftRightDigital',
-  UpDownLeftRightAnalog = 'UpDownLeftRightAnalog',
-  ValueSelector = 'ValueSelector',
-  Ventilation = 'Ventilation',
   Wallbox2 = 'Wallbox2',
   WallboxManager = 'WallboxManager',
   Webpage = 'Webpage',
   Window = 'Window',
-  WindowMonitor = 'WindowMonitor',
   ACControl = 'ACControl',
-  
+
   Unknown = 'Unknown'
 }
 
@@ -139,7 +146,7 @@ export interface ControlState {
 export interface ControlCommand {
   name: string;
   description: string;
-  commandType: 'pulse' | 'setValue' | 'setEnum' | 'hsv' | 'setBrightness' | 'temp' | 'daylight';
+  commandType: 'pulse' | 'setValue' | 'setEnum' | 'hsv' | 'setBrightness' | 'temp' | 'daylight' | 'setText';
   valueType?: 'number' | 'boolean' | 'string';
   min?: number;
   max?: number;
@@ -177,4 +184,5 @@ export interface StructureFile {
   cats: { [key: string]: LoxoneCategory };
   controls: { [key: string]: LoxoneControl };
   globalStates?: { [key: string]: string };
+  operatingModes?: { [id: string]: string };
 }

@@ -2,22 +2,10 @@ import 'reflect-metadata';
 import type { LoxoneConfig } from './tools/loxone-system/types/structure.js';
 import { Logger, LogLevel, type LoggerConfig } from './utils/Logger.js';
 import { container } from 'tsyringe';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { LoxoneConnectionTools } from './tools/index.js';
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  InitializeRequestSchema,
-  ErrorCode,
-  McpError,
-} from '@modelcontextprotocol/sdk/types.js';
-import { 
-  type RegisteredTool, 
-  validateArguments, 
-  formatMcpResponse,
-  getToolsFromInstance
-} from './mcp-helpers/index.js';
+import { registerTools, SERVER_INFO, SERVER_INSTRUCTIONS } from './mcp-helpers/index.js';
 import express from 'express';
 import { createAuthMiddleware, createJsonMiddleware, createJsonErrorHandler } from './http-middlewares/index.js';
 
@@ -31,7 +19,7 @@ container.register<LoggerConfig>('LoggerConfig', { useValue: loggerConfig });
 container.resolve(Logger);
 
 export class LoxoneHttpServer {
-  private server: Server;
+  private server: McpServer;
   private transport: StreamableHTTPServerTransport;
   private loxone: LoxoneConnectionTools;
   private logger: Logger;
@@ -45,27 +33,11 @@ export class LoxoneHttpServer {
     this.loxone = new LoxoneConnectionTools(config);
     this.port = port || Number(process.env.PORT || process.env.MCP_PORT) || 3000;
     this.apiKey = process.env.MCP_API_KEY;
-    // Initialize MCP server
-    this.server = new Server(
-      {
-        name: 'loxone-mcp-server',
-        title: 'Loxone Smart Home Miniserver Connector',
-        version: process.env.npm_package_version || '1.0.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-        instructions: `# Loxone Smart Home MCP Server (HTTP)
-
-This server provides tools to interact with your Loxone Miniserver for smart home control, monitoring and analyzing historical data.
-
-- Not all controls support all commands - check control details first
-- Statistics are only available for controls with statistics enabled in Loxone Config
-- This is the HTTP transport version of the MCP server`,
-      }
-    );
-        // Initialize MCP transport
+    this.server = new McpServer(SERVER_INFO, {
+      capabilities: { tools: {} },
+      instructions: SERVER_INSTRUCTIONS,
+    });
+    // Initialize MCP transport
     this.transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
       enableJsonResponse: true,
@@ -77,67 +49,7 @@ This server provides tools to interact with your Loxone Miniserver for smart hom
   }
 
   private setupMcpHandlers(): void {
-    // Get all tools from the LoxoneConnection instance
-    const registeredTools = getToolsFromInstance(this.loxone);
-    
-    // Handle initialize request
-    this.server.setRequestHandler(InitializeRequestSchema, async (_request) => {
-      return {
-        protocolVersion: "2025-03-26",
-        capabilities: {
-          tools: {}
-        },
-        serverInfo: {
-          name: "loxone-mcp-server",
-          version: process.env.npm_package_version || "1.0.0"
-        }
-      };
-    });
-    
-    // List available tools - dynamically built from decorators
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      const tools = registeredTools.map(tool => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: tool.inputSchema
-      }));
-      return { tools };
-    });
-
-    // Handle tool calls - unified handler that routes to decorated methods
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      try {
-        if (!request.params) {
-          throw new McpError(ErrorCode.InvalidRequest, 'Missing request parameters');
-        }
-        const { name, arguments: args } = request.params;
-        // Find the tool by name
-        const tool = registeredTools.find(t => t.name === name);
-        if (!tool) {
-          throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
-        }
-        // Call the tool handler with arguments and it formats the response
-        return await this.callTool(tool, args || {});
-      } catch (error) {
-        if (error instanceof McpError) {
-          throw error;
-        }
-        this.logger.error('LoxoneHttpServer', 'Tool execution failed:', error);
-        throw new McpError(ErrorCode.InternalError, `Tool execution failed because of internal error. Please try again later.`);
-      }
-    });
-  }
-
-  /**
-   * Call a tool with the provided arguments
-   */
-  private async callTool(tool: RegisteredTool, args: Record<string, unknown>) {
-    // Validate arguments against schema
-    validateArguments(tool, args);
-    // Call the method with the args object
-    const result = await tool.handler(args);
-    // Format response for MCP
-    return formatMcpResponse(result);
+    registerTools(this.server, this.loxone, this.logger, 'LoxoneHttpServer');
   }
 
   private setupExpressHandlers(): void {

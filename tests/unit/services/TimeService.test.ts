@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import 'reflect-metadata';
 import { container } from 'tsyringe';
 import { TimeService } from '../../../src/tools/loxone-system/services/TimeService.js';
@@ -66,9 +66,8 @@ describe('TimeService', () => {
       } as any;
 
       const mockResponse = {
-        LL: {
-          value: '2023-07-03 13:01:36 +02:00:00'
-        },
+        control: 'dev/sps/io/time-uuid-123',
+        value: '2023-07-03 13:01:36 +02:00:00',
         code: 200
       };
 
@@ -124,14 +123,14 @@ describe('TimeService', () => {
       );
     });
 
-    it('should handle response without LL.value', async () => {
+    it('should handle response without value', async () => {
       const mockStructure: StructureFile = {
         globalStates: {
           miniserverTime: 'time-uuid-123'
         }
       } as any;
 
-      const mockResponse = { LL: { value: 0 }, code: 200 };
+      const mockResponse = { control: 'dev/sps/io/time-uuid-123', code: 200 };
       mockConnectionManager.sendCommand.mockResolvedValue(mockResponse);
 
       await timeService.updateStructure(mockStructure);

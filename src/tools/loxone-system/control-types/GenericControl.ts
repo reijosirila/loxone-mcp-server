@@ -89,12 +89,10 @@ export class GenericControl extends AbstractControlType {
       status = `${position.value}%`;
     } else if (state?.value !== undefined && state.value !== null) {
       status = String(state.value);
-    } else if (statesToUse.length > 0) {
-      // Show the first available state
-      const firstState = statesToUse[0];
-      status = `${firstState.name}: ${firstState.value}`;
     } else {
-      status = 'No state';
+      const informative = statesToUse.find(s =>
+        s.name !== 'jLocked' && s.value !== null && s.value !== undefined && s.value !== '' && typeof s.value !== 'object');
+      status = informative ? `${informative.name}: ${informative.value}${informative.unit || ''}` : 'No state';
     }
     
     return `${typeStr} (${status})`;

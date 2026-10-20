@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "loxone": {
+      "type": "stdio",
+      "command": "sh",
+      "args": [
+        "-c",
+        "cd \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; npm run --silent build 1>&2 && exec node dist/server.js"
+      ],
+      "env": {
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  }
+}

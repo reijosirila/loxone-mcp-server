@@ -101,3 +101,42 @@ export function extractUnit(format: string | undefined): string | undefined {
   }
   return undefined;
 }
+const LOXONE_EPOCH_OFFSET_SECONDS = 1230768000; // 2009-01-01T00:00:00 in Miniserver local time
+
+/**
+ * Formats a Loxone timestamp (seconds since 2009-01-01, Miniserver local time) as
+ * "YYYY-MM-DD HH:mm:ss" in Miniserver local time. Returns undefined for 0/invalid.
+ */
+export function formatLoxoneTimestamp(value: unknown): string | undefined {
+  const seconds = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  const date = new Date((seconds + LOXONE_EPOCH_OFFSET_SECONDS) * 1000);
+  if (Number.isNaN(date.getTime())) return undefined;
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+/** Formats a duration in seconds as e.g. "1h 05m 30s". */
+export function formatDuration(value: unknown): string {
+  const total = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(total) || total < 0) return String(value);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = Math.floor(total % 60);
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`;
+  if (m > 0) return `${m}m ${String(s).padStart(2, '0')}s`;
+  return `${s}s`;
+}
+
+export function toNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+export function toBoolean(value: unknown): boolean | undefined {
+  if (value === null || value === undefined || value === '') return undefined;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') return value !== '0' && value.toLowerCase() !== 'false' && value !== '';
+  return Boolean(value);
+}

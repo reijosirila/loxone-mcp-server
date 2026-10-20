@@ -1,4 +1,4 @@
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach, afterEach } from '@jest/globals';
 import 'reflect-metadata';
 import { StateManager } from '../../../src/tools/loxone-system/services/StateManager.js';
 import { Logger } from '../../../src/utils/Logger.js';

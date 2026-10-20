@@ -46,7 +46,7 @@ export class EventHandlerService  {
   }
 
   public processEvent(event: BinaryEvent): void {
-    const uuid = bufferToUuid(event.uuid);
+    const uuid = event.uuid?.stringValue ?? bufferToUuid(event.uuid);
     if (uuid && event.value !== undefined) {
       this.stateManager.updateValue(uuid, event.value);
       this.logger.debug('EventHandler', `Stored value for ${uuid}: ${event.value}`);
@@ -54,7 +54,7 @@ export class EventHandlerService  {
   }
 
   public processTextEvent(event: BinaryEvent): void {
-    const uuid = bufferToUuid(event.uuid);
+    const uuid = event.uuid?.stringValue ?? bufferToUuid(event.uuid);
     if (uuid && event.text !== undefined) {
       this.stateManager.updateValue(uuid, event.text);
       this.logger.debug('EventHandler', `Stored text for ${uuid}: "${event.text}"`);
