@@ -1,4 +1,4 @@
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { ControlTypeFactory } from '../../../src/tools/loxone-system/control-types/ControlTypeFactory.js';
 import { ControlType } from '../../../src/tools/loxone-system/types/structure.js';
 import { SwitchControl } from '../../../src/tools/loxone-system/control-types/SwitchControl.js';

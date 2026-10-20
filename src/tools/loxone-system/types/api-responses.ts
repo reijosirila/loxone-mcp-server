@@ -1,16 +1,16 @@
 // Loxone API Response Types
 
+/** Shape of loxone-ts-api's TextMessage for a `jdev/...` command response. */
 export interface TextCommandResponse {
-  code: number;
-  LL?: {
-    control?: string;
-    value: string | number | boolean;
-    Code?: string;
-  };
+  code?: number;
+  control?: string;
+  value?: unknown;
+  data?: unknown;
 }
 
 export interface BinaryEvent {
   uuid: {
+    stringValue?: string;
     data1: Buffer;
     data2: Buffer;
     data3: Buffer;

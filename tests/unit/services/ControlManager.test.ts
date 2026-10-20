@@ -126,25 +126,40 @@ describe('ControlManager', () => {
       const controls = controlManager.getControls();
       
       expect(controls).toHaveLength(3);
-      expect(mockLogger.debug).toHaveBeenCalledWith('ControlManager', 'Getting controls');
+      expect(mockLogger.debug).toHaveBeenCalledWith('ControlManager', 'Getting controls', expect.anything());
     });
 
-    it('should filter controls by room', () => {
-      const controls = controlManager.getControls('room-uuid-1', null);
+    it('should filter controls by room uuid', () => {
+      const controls = controlManager.getControls({ room: 'room-uuid-1' });
       
       expect(controls).toHaveLength(2); // Switch and Dimmer are in room-uuid-1
     });
 
-    it('should filter controls by category', () => {
-      const controls = controlManager.getControls(null, 'cat-uuid-1');
-      
-      expect(controls).toHaveLength(1); // Only Switch is in cat-uuid-1
+    it('should filter controls by room name, case-insensitively', () => {
+      expect(controlManager.getControls({ room: 'living room' })).toHaveLength(2);
+      expect(controlManager.getControls({ room: 'Kitchen' })).toHaveLength(1);
+    });
+
+    it('should filter controls by category uuid or name', () => {
+      expect(controlManager.getControls({ category: 'cat-uuid-1' })).toHaveLength(1);
+      expect(controlManager.getControls({ category: 'energy' })).toHaveLength(1);
     });
 
     it('should filter controls by both room and category', () => {
-      const controls = controlManager.getControls('room-uuid-1', 'cat-uuid-2');
+      const controls = controlManager.getControls({ room: 'room-uuid-1', category: 'cat-uuid-2' });
       
       expect(controls).toHaveLength(1); // Only Dimmer matches both filters
+    });
+
+    it('should filter controls by type and search text', () => {
+      expect(controlManager.getControls({ type: 'switch' })).toHaveLength(1);
+      expect(controlManager.getControls({ search: 'meter' })).toHaveLength(1);
+      expect(controlManager.getControls({ search: 'does-not-exist' })).toHaveLength(0);
+    });
+
+    it('should reject unknown rooms with the list of available rooms', () => {
+      expect(() => controlManager.getControls({ room: 'Garage' })).toThrow(McpError);
+      expect(() => controlManager.getControls({ room: 'Garage' })).toThrow(/Available rooms: Kitchen, Living Room/);
     });
 
     it('should return empty array when no structure', () => {
@@ -154,15 +169,15 @@ describe('ControlManager', () => {
       expect(controls).toEqual([]);
     });
 
-    it('should skip unsupported control types', () => {
-      // Add an unsupported control type to the structure
+    it('should expose control types without a dedicated class as generic controls', () => {
       const structureWithUnsupported = {
         ...mockStructure,
         controls: {
           ...mockStructure.controls,
           'unsupported-uuid': {
-            name: 'Unsupported Control',
-            type: 'EFM', // Unsupported type
+            name: 'Pool',
+            type: 'PoolController',
+            uuidAction: 'unsupported-uuid',
             room: 'room-uuid-1',
             cat: 'cat-uuid-1'
           }
@@ -172,8 +187,21 @@ describe('ControlManager', () => {
       controlManager.updateStructure(structureWithUnsupported);
       const controls = controlManager.getControls();
       
-      // Should still have 3 controls (unsupported one is filtered out)
-      expect(controls).toHaveLength(3);
+      expect(controls).toHaveLength(4);
+      expect(controlManager.getControls({ type: 'PoolController' })[0].availableControlCommands()).toEqual([]);
+    });
+
+    it('should skip malformed controls without uuidAction', () => {
+      const structure = {
+        ...mockStructure,
+        controls: {
+          ...mockStructure.controls,
+          'broken-uuid': { name: 'Broken', type: 'Switch' }
+        }
+      } as any;
+      controlManager.updateStructure(structure);
+
+      expect(controlManager.getControls()).toHaveLength(3);
     });
   });
 
@@ -211,13 +239,31 @@ describe('ControlManager', () => {
     });
 
     describe('setControl', () => {
-      it('should send control command', async () => {
+      it('should send control command and return the Miniserver response', async () => {
         mockConnectionManager.isConnected.mockReturnValue(true);
+        mockConnectionManager.sendCommand.mockResolvedValue({ code: 200, value: '1' });
         
         const result = await controlManager.setControl('1234abcd-5678-90ef-1234-567890abcdef', 'on');
         
-        expect(result).toBe(true);
-        expect(mockConnectionManager.sendCommand).toHaveBeenCalled();
+        expect(result.code).toBe(200);
+        expect(result.value).toBe('1');
+        expect(mockConnectionManager.sendCommand).toHaveBeenCalledTimes(1);
+      });
+
+      it('should throw a descriptive error when the Miniserver answers with a non-200 code', async () => {
+        mockConnectionManager.isConnected.mockReturnValue(true);
+        mockConnectionManager.sendCommand.mockResolvedValue({ code: 403, value: undefined });
+
+        await expect(controlManager.setControl('1234abcd-5678-90ef-1234-567890abcdef', 'on'))
+          .rejects.toThrow(/code 403.*not allowed/);
+      });
+
+      it('should list available commands when the command is invalid', async () => {
+        mockConnectionManager.isConnected.mockReturnValue(true);
+
+        await expect(controlManager.setControl('1234abcd-5678-90ef-1234-567890abcdef', 'blink'))
+          .rejects.toThrow(/Invalid command blink for Switch. Available commands for .*: on, off/);
+        expect(mockConnectionManager.sendCommand).not.toHaveBeenCalled();
       });
 
       it('should handle invalid UUID', async () => {

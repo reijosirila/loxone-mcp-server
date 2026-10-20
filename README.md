@@ -17,7 +17,7 @@ Temporarily disabled ventilation and asked to analyze air quality impact and gen
 
 ### Using npm package
 
-To use npm package, minimum nodejs 20 is required.
+Node.js 22.1 or newer is required (Node 24 LTS is recommended and used by the Docker image).
 
 First install the package globally:
 
@@ -75,12 +75,29 @@ Then add to your Claude `claude_desktop_config.json` or any other MCP client con
 ```
 
 
+## Available Tools
+
+| Tool | Purpose |
+|------|---------|
+| `getSystemInfo` | Miniserver name, project, location, units, current operating mode, sunrise/sunset, connection state and control counts per type |
+| `getRooms` / `getCategories` | Rooms and categories with the number of controls in each |
+| `getControls` | Compact list of controls (uuid, type, room, one-line state summary, command names). Filter by `room`, `category` (UUID or name), `type` or free-text `search`; pass `detailed: true` for full state details |
+| `getControl` | Full state values and commands (with value ranges and options) of one control |
+| `setControl` | Send a command (`on`, `off`, `setValue`, `setTemperature`, `up`, `down`, ...). Returns the Miniserver response and the refreshed control state |
+| `getStatistics` | Aggregated historical data for controls with statistics enabled; predefined periods or a custom `from`/`to` range, optional output column for multi-output statistics |
+| `reloadStructure` | Re-download the structure file after changes in Loxone Config, without restarting |
+
+Tools carry MCP annotations (`readOnlyHint` etc.), so clients can auto-approve read-only calls. Tool failures (unknown control, invalid command, rejected by the Miniserver) are returned as readable tool errors, including the list of valid commands, so the assistant can correct itself.
+
+Every control in the structure file is visible: types without a dedicated implementation are exposed read-only through a generic control with best-effort state formatting.
+
 ## Loxone Statistics Support
 
 The MCP server supports Loxone Statistics, which aggregates historical data into smaller portions optimized for AI analysis. This allows for efficient analysis of trends and patterns in your smart home data.
 
-- **Statistics V1**: ✅ Fully supported and tested
+- **Statistics V1**: ✅ Fully supported and tested (Gen1 Miniservers included: large monthly files, controller-local timezone, multi-output files)
 - **Statistics V2**: ⚠️ Supported but not yet tested
+- Custom time windows: pass ISO `from`/`to` to `getStatistics`; the aggregation level (minute, hour, day, month) is chosen from the span
 
 ## Loxone Control Implementation Status
 
@@ -88,6 +105,7 @@ The MCP server supports Loxone Statistics, which aggregates historical data into
 |---------|-------------|---------------|--------|
 | **Implemented Controls** | | | |
 | Alarm | ✅ | Full | ❌ |
+| AlarmClock | ✅ | snooze, dismiss | ❌ |
 | AudioZone | ✅ | Full | ✅ |
 | AudioZoneV2 | ✅ | Full | ✅ |
 | Central Objects (Alarm) | ✅ | Full | ❌ |
@@ -97,73 +115,70 @@ The MCP server supports Loxone Statistics, which aggregates historical data into
 | Central Objects (Window) | ✅ | Full | ❌ |
 | ColorPicker | ✅ | Full | ✅ |
 | ColorPickerV2 | ✅ | Full | ✅ |
+| Daytimer | ✅ | Read-only (current output, override) | ❌ |
 | Dimmer | ✅ | Full | ✅ |
 | EIBDimmer | ✅ | Full | ✅ |
+| EnergyFlowMonitor | ✅ | Read-only | ✅ |
+| EnergyManager2 | ✅ | Read-only | ❌ |
+| Fronius | ✅ | Read-only | ❌ |
 | Gate | ✅ | Full | ❌ |
-| InfoOnlyAnalog | ✅ | Full | ✅ |
-| InfoOnlyDigital | ✅ | Full | ✅ |
+| Hourcounter | ✅ | Read-only | ❌ |
+| InfoOnlyAnalog | ✅ | Read-only | ✅ |
+| InfoOnlyDigital | ✅ | Read-only | ✅ |
+| InfoOnlyText | ✅ | Read-only | ❌ |
 | Intelligent Room Controller | ✅ | ⚠️ Partial | ❌ |
 | Intelligent Room Controller v2 | ✅ | ⚠️ Partial | ✅ |
+| Intercom | ✅ | answer | ❌ |
+| IntercomV2 | ✅ | Read-only | ❌ |
 | Jalousie | ✅ | Full | ❌ |
 | LightController | ✅ | Full | ✅ |
-| LightControllerV2 | ✅ | Full | ✅ |
-| Meter | ✅ | Full | ✅ |
+| LightControllerV2 | ✅ | Full (moods, individual lights, colors) | ✅ |
+| LoadManager | ✅ | Read-only | ❌ |
+| MailBox | ✅ | confirmPacket, confirmMail | ❌ |
+| Meter | ✅ | Read-only | ✅ |
+| PresenceDetector | ✅ | Read-only | ❌ |
 | Pushbutton | ✅ | Full | ✅ |
 | Radio | ✅ | Full | ✅ |
-| Slider | ✅ | Full | ✅ |
-| Switch | ✅ | Full | ✅ |
-| TextState | ✅ | Full | ✅ |
-| EnergyFlowMonitor | ✅ | Full | ✅ |
-| EnergyManager2 | ✅ | Full | ❌ |
-| IntercomV2 | ✅ | Full | ❌ |
 | Sauna | ✅ | Full | ❌ |
-| **Not Implemented Controls** | | | |
-| AalEmergency | ❌ | - | ❌ |
-| AalSmartAlarm | ❌ | - | ❌ |
-| ACControl | ❌ | - | ❌ |
-| AlarmChain | ❌ | - | ❌ |
-| AlarmClock | ❌ | - | ❌ |
-| Application | ❌ | - | ❌ |
-| CarCharger | ❌ | - | ❌ |
-| ClimateController | ❌ | - | ❌ |
-| ClimateControllerUS | ❌ | - | ❌ |
-| Daytimer | ❌ | - | ❌ |
-| EnergyManager | ❌ | - | ❌ |
-| Fronius | ❌ | - | ❌ |
-| Heatmixer | ❌ | - | ❌ |
-| Hourcounter | ❌ | - | ❌ |
-| InfoOnlyText | ❌ | - | ❌ |
-| Intercom | ❌ | - | ❌ |
-| Irrigation | ❌ | - | ❌ |
-| LightsceneRGB | ❌ | - | ❌ |
-| LoadManager | ❌ | - | ❌ |
-| MailBox | ❌ | - | ❌ |
-| MsShortcut | ❌ | - | ❌ |
-| NFC Code Touch | ❌ | - | ❌ |
-| PoolController | ❌ | - | ❌ |
-| PowerUnit | ❌ | - | ❌ |
-| PresenceDetector | ❌ | - | ❌ |
-| PulseAt | ❌ | - | ❌ |
-| Remote | ❌ | - | ❌ |
-| Sequential | ❌ | - | ❌ |
-| SmokeAlarm | ❌ | - | ❌ |
-| SolarPumpController | ❌ | - | ❌ |
-| SpotPriceOptimizer | ❌ | - | ❌ |
-| StatusMonitor | ❌ | - | ❌ |
-| SteakThermo | ❌ | - | ❌ |
-| SystemScheme | ❌ | - | ❌ |
-| TextInput | ❌ | - | ❌ |
-| TimedSwitch | ❌ | - | ❌ |
-| Tracker | ❌ | - | ❌ |
-| UpDownLeftRight (analog) | ❌ | - | ❌ |
-| UpDownLeftRight (digital) | ❌ | - | ❌ |
-| ValueSelector | ❌ | - | ❌ |
-| Ventilation | ❌ | - | ❌ |
-| Wallbox2 | ❌ | - | ❌ |
-| WallboxManager | ❌ | - | ❌ |
-| Webpage | ❌ | - | ❌ |
-| Window | ❌ | - | ❌ |
-| WindowMonitor | ❌ | - | ❌ |
+| Slider | ✅ | Full | ✅ |
+| SmokeAlarm | ✅ | mute, quit | ❌ |
+| Switch | ✅ | Full | ✅ |
+| TextState | ✅ | Read-only | ✅ |
+| TimedSwitch | ✅ | pulse, on, off | ❌ |
+| Tracker | ✅ | Read-only | ❌ |
+| ValueSelector / UpDownAnalog / LeftRightAnalog / UpDownLeftRightAnalog | ✅ | setValue with range check | ❌ |
+| Ventilation | ✅ | Read-only | ❌ |
+| WindowMonitor | ✅ | Read-only (per-window states) | ❌ |
+| AalSmartAlarm / AalEmergency | ✅ | Read-only (deliberately) | ❌ |
+| **Generic (read-only state, no commands)** | | | |
+| ACControl | ⚠️ generic | Read-only | ❌ |
+| AlarmChain | ⚠️ generic | Read-only | ❌ |
+| Application | ⚠️ generic | Read-only | ❌ |
+| CarCharger | ⚠️ generic | Read-only | ❌ |
+| ClimateController | ⚠️ generic | Read-only | ❌ |
+| ClimateControllerUS | ⚠️ generic | Read-only | ❌ |
+| EnergyManager | ⚠️ generic | Read-only | ❌ |
+| Heatmixer | ⚠️ generic | Read-only | ❌ |
+| Irrigation | ⚠️ generic | Read-only | ❌ |
+| LightsceneRGB | ⚠️ generic | Read-only | ❌ |
+| MsShortcut | ⚠️ generic | Read-only | ❌ |
+| NFC Code Touch | ⚠️ generic | Read-only | ❌ |
+| PoolController | ⚠️ generic | Read-only | ❌ |
+| PowerUnit | ⚠️ generic | Read-only | ❌ |
+| PulseAt | ⚠️ generic | Read-only | ❌ |
+| Remote | ⚠️ generic | Read-only | ❌ |
+| Sequential | ⚠️ generic | Read-only | ❌ |
+| SolarPumpController | ⚠️ generic | Read-only | ❌ |
+| SpotPriceOptimizer | ⚠️ generic | Read-only | ❌ |
+| StatusMonitor | ⚠️ generic | Read-only | ❌ |
+| SteakThermo | ⚠️ generic | Read-only | ❌ |
+| SystemScheme | ⚠️ generic | Read-only | ❌ |
+| TextInput | ⚠️ generic | Read-only | ❌ |
+| UpDownLeftRight (digital) | ⚠️ generic | Read-only | ❌ |
+| Wallbox2 | ⚠️ generic | Read-only | ❌ |
+| WallboxManager | ⚠️ generic | Read-only | ❌ |
+| Webpage | ⚠️ generic | Read-only | ❌ |
+| Window | ⚠️ generic | Read-only | ❌ |
 
 ### Adding New Controls
 
@@ -175,11 +190,10 @@ Implementing new controls is straightforward using the `AbstractControlType` bas
 
 ### Miniserver Version Support
 
-- **Miniserver v1**: ✅ Fully supported (local and remote connections)
-- **Miniserver v2**: ⚠️ Local connection only
-  - v2 should work but is not tested
-  - Remote connection to v2 is not currently supported due to SSL encryption requirements
-  - The underlying client library (`loxone-ts-api`) doesn't have SSL support implemented yet
+- **Miniserver Gen. 1**: ✅ Fully supported (local and remote connections)
+- **Miniserver Gen. 2 / Compact / Go**: ✅ Supported locally and remotely over HTTPS (`loxone-ts-api` 2.x). Set `LOXONE_HOST` to the full URL, e.g. `https://my-miniserver.example:443`, or use `LOXONE_PROTOCOL=https`.
+- Requires Miniserver firmware 11.2 or newer.
+- The connection is kept alive and re-established automatically; after a reconnect the structure is reloaded if it changed.
 
 🙏 **Special thanks** to the [loxone-ts-api](https://github.com/andrasg/loxone-ts-api/tree/main) library for providing the foundation for Loxone communication!
 
@@ -195,7 +209,7 @@ The transport can be configured using the `MCP_TRANSPORT` environment variable:
 
 ## Connection Options
 
-- Connect directly to your Miniserver using its local IP address.
+- Connect directly to your Miniserver using its local IP address, hostname or full base URL (`http://` or `https://`).
 
 - Connect to your Miniserver remotely using Loxone's cloud discovery service:
   - Automatically discovers your Miniserver's external URL and port using its serial number. This is done using HEAD request to: `https://dns.loxonecloud.com/<sn>`
@@ -221,9 +235,16 @@ LOXONE_HOST=192.168.1.100
 LOXONE_USERNAME=admin
 LOXONE_PASSWORD=your-password
 
+# Optional: port (default 80 for http, 443 for https) and protocol (http or https)
+# LOXONE_PORT=80
+# LOXONE_PROTOCOL=http
+
 # Or connect over the internet using Loxone DNS
 # This will auto-discover Loxone external URL and port
 # LOXONE_SERIAL_NUMBER=
+
+# How long startup waits for the Miniserver before failing (default 30000 ms)
+# LOXONE_CONNECT_TIMEOUT_MS=30000
 
 # MCP Transport configuration
 # Options: stdio (default), http
@@ -263,7 +284,7 @@ If you prefer to run without Docker, you can use Node.js directly:
 
 ### Prerequisites
 
-- Node.js 22+
+- Node.js 22.1+ (24 LTS recommended)
 - npm
 - TypeScript
 
@@ -287,6 +308,25 @@ npm run start:http
 # Development mode
 npm run dev          # stdio transport
 npm run dev:http     # Streamable HTTP transport
+```
+
+### Testing with Claude Code
+
+The repository ships a project-scoped `.mcp.json`, so starting `claude` in this directory offers the `loxone` server automatically (Claude Code asks once to approve project servers; `claude mcp reset-project-choices` resets that). The entry rebuilds `dist/` and launches the server over stdio, reading the Miniserver credentials from `.env`:
+
+```bash
+cp .env.example .env   # or create .env with LOXONE_HOST / LOXONE_USERNAME / LOXONE_PASSWORD
+claude                 # then: /mcp to see the server status, or just ask "what rooms do I have?"
+```
+
+`claude mcp list` shows the server outside a session. Startup includes cloud discovery and the initial state download, so allow a few seconds; raise `MCP_TIMEOUT` (milliseconds) if your Miniserver is slow to reach.
+
+### Running the tests
+
+```bash
+npm test               # unit tests (jest)
+npm run lint
+npm run inspect        # MCP Inspector against the TypeScript sources
 ```
 
 ### Streamable HTTP Transport Usage

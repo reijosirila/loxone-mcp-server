@@ -14,17 +14,16 @@ import { TimeService } from './services/TimeService.js';
 import { StatisticsService } from './services/StatisticsService.js';
 import { EventHandlerService } from './services/EventHandlerService.js';
 import { CloudDiscoveryService } from './services/CloudDiscoveryService.js';
-//import { CloudDiscoveryService } from './services/CloudDiscoveryService.js';
 
 export class LoxoneSystem {
   public readonly connectionManager: ConnectionManager;
   public readonly controlManager: ControlManager;
   public readonly statisticsService: StatisticsService;
+  public readonly timeService: TimeService;
+  private readonly scopedContainer: DependencyContainer;
   private initialized: boolean = false;
   private eventHandlerService: EventHandlerService;
-  private stateManager: StateManager;
-  private timeService: TimeService;
-  private readonly scopedContainer: DependencyContainer;
+  public readonly stateManager: StateManager;
   private logger: Logger;
   private options: Partial<LoxoneConfig>;
 
@@ -91,7 +90,6 @@ export class LoxoneSystem {
       host: cloudDiscoveryResult.host,
       port: cloudDiscoveryResult.port,
       protocol: cloudDiscoveryResult.protocol,
-      wsProtocol: cloudDiscoveryResult.wsProtocol,
     }
   }
 

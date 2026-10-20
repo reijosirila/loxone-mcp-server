@@ -6,82 +6,95 @@ import type { TextCommandResponse } from '../types/api-responses.js';
 import { retry } from '../utils/index.js';
 import { Logger } from '../../../utils/Logger.js';
 
-type LoxoneConfigInternal = Omit<LoxoneConfig, 'serialNumber'>;
-
-enum ConnectionState {
+export enum ConnectionState {
   UNINITIALIZED = 'UNINITIALIZED',
   INITIALIZED = 'INITIALIZED',
   CONNECTING = 'CONNECTING',
   CONNECTED = 'CONNECTED',
-  DISCONNECTING = 'DISCONNECTING',
   DISCONNECTED = 'DISCONNECTED',
-  ERROR = 'ERROR'
+  CLOSED = 'CLOSED'
 }
 
+export interface ConnectionInfo {
+  state: ConnectionState;
+  miniserverUrl?: string;
+  structureLoaded: boolean;
+  structureLastModified?: string;
+  lastDisconnectReason?: string;
+  lastError?: string;
+}
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 30000;
+const SERIAL_NUMBER_PATTERN = /^(?:[0-9a-f]{2}[:-]?){5}[0-9a-f]{2}$/i;
+const URL_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
+
 /**
- * ConnectionManager handles the WebSocket connection to the Loxone Miniserver.
- * 
- * Responsibilities:
- * - Establishes and maintains WebSocket connection to Loxone Miniserver
- * - Retrieves and caches the Miniserver structure file
- * - Sends commands to the Miniserver and receives responses
- * - Emits connection lifecycle events (connected, disconnected, error)
- * - Provides methods to check connection status and retrieve server information
- * 
- * This service is the core communication layer between the MCP server and Loxone system.
+ * ConnectionManager owns the loxone-ts-api client.
+ *
+ * The client keeps the WebSocket alive on its own (keepalive, token refresh and an
+ * endless auto-reconnect loop that re-enables binary updates), so this class only
+ * mirrors the client's state, loads the structure file and forwards state events.
  */
 @injectable()
 export class ConnectionManager extends EventEmitter {
   private client?: LoxoneClient;
   private state: ConnectionState = ConnectionState.UNINITIALIZED;
-  private structureLoaded: boolean = false;
   private structure: StructureFile | null = null;
-  private options: LoxoneConfigInternal | null = null;
-  private authHandler?: () => void;
-  private errorHandler?: (reason: string) => void;
-  private reconnectAttempts = 0;
-  private readonly MAX_RECONNECT_ATTEMPTS = 3;
-  private readonly AUTH_TIMEOUT_MS = 10000; // Increased from 5000
+  private baseUrl: URL | null = null;
+  private credentials: { username: string; password: string } | null = null;
+  private connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
+  private lastDisconnectReason?: string;
+  private lastError?: string;
 
   constructor(private readonly logger: Logger) {
     super();
   }
 
+  public static buildBaseUrl(host: string, port?: number, protocol?: 'http' | 'https'): URL {
+    const trimmed = host.trim().replace(/\/+$/, '');
+    if (!trimmed) {
+      throw new Error('Loxone host must not be empty');
+    }
+    if (SERIAL_NUMBER_PATTERN.test(trimmed)) {
+      throw new Error(`'${trimmed}' looks like a Miniserver serial number. Set LOXONE_SERIAL_NUMBER instead of LOXONE_HOST to use cloud discovery.`);
+    }
+    const url = URL_SCHEME_PATTERN.test(trimmed)
+      ? new URL(trimmed)
+      : new URL(`${protocol ?? 'http'}://${trimmed}`);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error(`Unsupported protocol '${url.protocol.replace(':', '')}', use http or https`);
+    }
+    if (port && !url.port) {
+      url.port = String(port);
+    }
+    return url;
+  }
+
   public initialize(config: Partial<LoxoneConfig>) {
     this.logger.info('ConnectionManager', 'Initializing...');
-    const { host, port, protocol, wsProtocol, username, password } = config;
+    const { host, port, protocol, username, password, connectTimeoutMs } = config;
     if (!host || !username || !password) {
-      throw new Error('Loxone host, port username and password must be provided');
+      throw new Error('Loxone host, username and password must be provided');
     }
     if (protocol && !['http', 'https'].includes(protocol)) {
       throw new Error('Unsupported protocol');
     }
-    if (wsProtocol && !['ws', 'wss'].includes(wsProtocol)) {
-      throw new Error('Unsupported WebSocket protocol');
+    this.baseUrl = ConnectionManager.buildBaseUrl(host, port, protocol);
+    this.credentials = { username, password };
+    if (connectTimeoutMs && connectTimeoutMs > 0) {
+      this.connectTimeoutMs = connectTimeoutMs;
     }
-    if (protocol === 'https' || wsProtocol === 'wss') {
-      throw new Error('HTTPS/WSS protocol is not supported');
-    }
-    this.options = {
-      host,
-      port: port || 80,
-      protocol: protocol || 'http',
-      wsProtocol: wsProtocol || 'ws',
-      username,
-      password,
-    };
-    this.client = new LoxoneClient(`${this.options.host}:${this.options.port}`, username, password, {
+    this.client = new LoxoneClient(this.baseUrl.origin, username, password, {
       autoReconnectEnabled: true,
       keepAliveEnabled: true,
       messageLogEnabled: false,
       logAllEvents: false,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      logLevel: 'error' as any,
       maintainLatestEvents: false,
     });
+    this.client.setLogLevel('error');
     this.setupEventHandlers();
     this.state = ConnectionState.INITIALIZED;
-    this.logger.info('ConnectionManager', 'Initialization complete');
+    this.logger.info('ConnectionManager', `Initialized for ${this.baseUrl.origin}`);
     return this;
   }
 
@@ -89,192 +102,194 @@ export class ConnectionManager extends EventEmitter {
     if (!this.client) {
       throw new Error('Client not initialized');
     }
-    this.client.on('connected', () => {
-      this.logger.info('ConnectionManager', 'Connected');
-      if (this.state === ConnectionState.CONNECTING) {
-        this.state = ConnectionState.CONNECTED;
-      }
-      this.emit('connected');
+    this.client.on('ready', () => {
+      void this.onReady();
     });
-
     this.client.on('disconnected', (reason: string) => {
+      if (this.state === ConnectionState.CLOSED) return;
       this.logger.warn('ConnectionManager', `Disconnected: ${reason}`);
-      const wasConnected = this.state === ConnectionState.CONNECTED;
+      this.lastDisconnectReason = reason;
       this.state = ConnectionState.DISCONNECTED;
       this.emit('disconnected', reason);
-      
-      // Only attempt reconnect if we were previously connected
-      if (wasConnected && this.reconnectAttempts < this.MAX_RECONNECT_ATTEMPTS) {
-        this.handleReconnect();
-      }
     });
-
-    this.client.on('authenticated', () => {
-      this.logger.info('ConnectionManager', 'Authenticated');
-      this.reconnectAttempts = 0; // Reset on successful auth
-      this.emit('authenticated');
+    // An unhandled 'error' event would crash the process; the client reconnects on its own.
+    this.client.on('error', (error: Error) => {
+      this.lastError = error.message;
+      this.logger.error('ConnectionManager', `Connection error: ${error.message}`);
     });
-
-    // Forward all WebSocket events
     this.client.on('event_value', (data) => this.emit('event_value', data));
     this.client.on('event_text', (data) => this.emit('event_text', data));
   }
 
-  public async connect() {
+  private async onReady(): Promise<void> {
+    const isReconnect = this.state === ConnectionState.DISCONNECTED;
+    this.state = ConnectionState.CONNECTED;
+    this.logger.info('ConnectionManager', isReconnect ? 'Reconnected' : 'Connected');
+    this.emit('connected');
+    if (!isReconnect) return;
     try {
-      if (!this.client || this.state === ConnectionState.UNINITIALIZED) {
-        throw new Error('ConnectionManager not initialized. Call initialize() first.');
+      // Binary updates are re-enabled by the client itself; only the structure may be stale.
+      if (this.structure) {
+        await this.refreshStructureIfChanged();
+      } else {
+        await this.enableUpdates();
+        await this.loadStructure();
       }
-      if (this.state === ConnectionState.CONNECTED) {
-        this.logger.warn('ConnectionManager', 'Already connected');
-        return this;
-      }
-      if (this.state === ConnectionState.CONNECTING) {
-        this.logger.warn('ConnectionManager', 'Connection already in progress');
-        return this;
-      }
-      
-      this.state = ConnectionState.CONNECTING;
-      this.logger.info('ConnectionManager', 'Connecting to Loxone...');
-      // Create authentication promise
-      const authPromise = new Promise<void>((resolve, reject) => {
-        this.authHandler = () => {
-          this.cleanupAuthHandlers();
-          resolve();
-        };
-        this.errorHandler = (reason: string) => {
-          this.cleanupAuthHandlers();
-          reject(new Error(`Connection failed: ${reason}`));
-        };
-        
-        if (!this.client) {
-          reject(new Error('Client unexpectedly null'));
-          return;
-        }
-        this.client.once('authenticated', this.authHandler);
-        this.client.once('disconnected', this.errorHandler);
-      });
-      
-      // Start connection
-      await this.client.connect();
-      
-      // Wait for authentication with timeout
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          this.cleanupAuthHandlers();
-          reject(new Error('Authentication timeout'));
-        }, this.AUTH_TIMEOUT_MS);
-      });
-      
-      await Promise.race([authPromise, timeoutPromise]);
-      this.state = ConnectionState.CONNECTED;
+    } catch (error) {
+      this.logger.error('ConnectionManager', 'Post-reconnect refresh failed:', error);
+    }
+  }
+
+  public async connect() {
+    if (!this.client || this.state === ConnectionState.UNINITIALIZED) {
+      throw new Error('ConnectionManager not initialized. Call initialize() first.');
+    }
+    if (this.state === ConnectionState.CONNECTED) {
+      this.logger.warn('ConnectionManager', 'Already connected');
+      return this;
+    }
+    if (this.state === ConnectionState.CONNECTING) {
+      this.logger.warn('ConnectionManager', 'Connection already in progress');
+      return this;
+    }
+    this.state = ConnectionState.CONNECTING;
+    this.logger.info('ConnectionManager', `Connecting to ${this.baseUrl?.origin}...`);
+    const ready = this.waitForReady(this.connectTimeoutMs);
+    // Not awaited: with auto-reconnect enabled this promise only settles once a connection succeeds.
+    this.client.connect().catch((error) => {
+      this.lastError = error instanceof Error ? error.message : String(error);
+      this.logger.error('ConnectionManager', 'Connect failed:', error);
+    });
+    try {
+      await ready;
       await this.enableUpdates();
       await this.loadStructure();
+      await this.waitForInitialStates();
       return this;
     } catch (error) {
-      this.state = ConnectionState.ERROR;
+      this.lastError = error instanceof Error ? error.message : String(error);
       this.logger.error('ConnectionManager', 'Connection failed:', error);
       throw error;
     }
   }
-  
-  private cleanupAuthHandlers(): void {
-    if (this.client) {
-      if (this.authHandler) {
-        this.client.off('authenticated', this.authHandler);
-        this.authHandler = undefined;
-      }
-      if (this.errorHandler) {
-        this.client.off('disconnected', this.errorHandler);
-        this.errorHandler = undefined;
-      }
-    }
+
+  private waitForReady(timeoutMs: number): Promise<void> {
+    const client = this.client;
+    if (!client) return Promise.reject(new Error('Client not initialized'));
+    if (this.isClientReady()) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const onReady = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        client.off('ready', onReady);
+        const detail = this.lastError ? ` (last error: ${this.lastError})` : '';
+        reject(new Error(`Miniserver at ${this.baseUrl?.origin} did not become ready within ${timeoutMs}ms${detail}`));
+      }, timeoutMs);
+      client.once('ready', onReady);
+    });
   }
-  
-  private async handleReconnect(): Promise<void> {
-    this.reconnectAttempts++;
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000); // Exponential backoff
-    this.logger.info('ConnectionManager', `Attempting reconnect ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS} in ${delay}ms`);
-    
-    setTimeout(async () => {
-      try {
-        await this.connect();
-      } catch (error) {
-        this.logger.error('ConnectionManager', 'Reconnect failed:', error);
-      }
-    }, delay);
+
+  /**
+   * After enabling binary updates the Miniserver streams the current value of every
+   * state. Wait until that burst goes quiet so the first tool call sees real values.
+   */
+  private waitForInitialStates(quietMs = 500, maxMs = 5000): Promise<void> {
+    const client = this.client;
+    if (!client) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      let quietTimer: NodeJS.Timeout;
+      const done = () => {
+        clearTimeout(quietTimer);
+        clearTimeout(maxTimer);
+        client.off('event_value', bump);
+        client.off('event_text', bump);
+        resolve();
+      };
+      const bump = () => {
+        clearTimeout(quietTimer);
+        quietTimer = setTimeout(done, quietMs);
+      };
+      const maxTimer = setTimeout(done, maxMs);
+      quietTimer = setTimeout(done, quietMs);
+      client.on('event_value', bump);
+      client.on('event_text', bump);
+    });
+  }
+
+  private isClientReady(): boolean {
+    return (this.client?.state as string | undefined) === 'ready';
   }
 
   private async enableUpdates() {
     if (!this.client) {
       throw new Error('Client not initialized');
     }
-    try {
-      this.logger.info('ConnectionManager', 'Enabling binary updates...');
-      await this.client.enableUpdates();
-    } catch (error) {
-      this.logger.error('ConnectionManager', 'Binary update enable failed:', error);
-      throw error; // Let the caller handle reconnection
-    }
+    this.logger.info('ConnectionManager', 'Enabling binary updates...');
+    await this.client.enableUpdates();
   }
 
   private async loadStructure() {
     if (!this.client) {
       throw new Error('Client not initialized');
     }
-    try {
-      this.logger.info('ConnectionManager', 'Fetching structure file...');
-      this.structure = await retry(
-        () => {
-          if (!this.client) {
-            throw new Error('Client became null during retry');
-          }
-          return this.client.getStructureFile();
-        },
-        3,
-        1000
-      );
-      this.logger.info('ConnectionManager', `Structure loaded. Found ${Object.keys(this.structure?.controls || {}).length} controls`);
-      this.emit('structureLoaded', this.structure);
-      this.structureLoaded = true;
-    } catch (err) {
-      this.logger.error('ConnectionManager', 'Failed to load structure:', err);
-      throw err; // Let the caller handle reconnection
-    }
+    this.logger.info('ConnectionManager', 'Fetching structure file...');
+    this.structure = await retry(
+      () => {
+        if (!this.client) {
+          throw new Error('Client became null during retry');
+        }
+        return this.client.getStructureFile();
+      },
+      3,
+      1000
+    );
+    this.logger.info('ConnectionManager', `Structure loaded. Found ${Object.keys(this.structure?.controls || {}).length} controls`);
+    this.emit('structureLoaded', this.structure);
   }
 
-  // Serialized HTTP queue: Gen1 Miniservers handle very few concurrent HTTP
-  // connections; a hung socket must never block the whole server. Every request
-  // gets a hard timeout and requests are executed one at a time.
+  private async refreshStructureIfChanged() {
+    const response = await this.sendCommand('jdev/sps/LoxAPPversion3');
+    const remoteVersion = response.value === undefined ? '' : String(response.value);
+    if (!remoteVersion || remoteVersion === this.structure?.lastModified) {
+      this.logger.debug('ConnectionManager', 'Structure unchanged since last load');
+      return;
+    }
+    this.logger.info('ConnectionManager', `Structure changed (${this.structure?.lastModified} -> ${remoteVersion}), reloading`);
+    await this.loadStructure();
+  }
+
+  // Gen1 Miniservers handle very few concurrent HTTP connections and can take a long
+  // time to serve large files, so requests run one at a time with a hard timeout.
   private fetchChain: Promise<unknown> = Promise.resolve();
   private readonly FETCH_TIMEOUT_MS = 60000;
 
   public async fetch(path: string, timeoutMs?: number): Promise<Response> {
-    if (!this.options) {
+    if (!this.baseUrl || !this.credentials) {
       throw new Error('ConnectionManager not initialized');
     }
-    const baseUrl = `${this.options.protocol}://${this.options.host}:${this.options.port}`;
-    const auth = Buffer.from(`${this.options.username}:${this.options.password}`).toString('base64');
-    const url = `${baseUrl}/${path.startsWith('/') ? path.slice(1) : path}`;
-    const headers = { 'Authorization': `Basic ${auth}` };
+    const auth = Buffer.from(`${this.credentials.username}:${this.credentials.password}`).toString('base64');
+    const url = new URL(path.startsWith('/') ? path.slice(1) : path, this.baseUrl);
+    const timeout = timeoutMs ?? this.FETCH_TIMEOUT_MS;
     const run = async (): Promise<Response> => {
       try {
-        return await fetch(url, { headers, signal: AbortSignal.timeout(timeoutMs ?? this.FETCH_TIMEOUT_MS) });
+        return await fetch(url, { headers: { 'Authorization': `Basic ${auth}` }, signal: AbortSignal.timeout(timeout) });
       } catch (err) {
         this.logger.warn('ConnectionManager', `HTTP fetch failed/timeout for ${path}:`, err);
-        throw new Error(`Miniserver HTTP request failed or timed out (${this.FETCH_TIMEOUT_MS}ms): ${path}`);
+        throw new Error(`Miniserver HTTP request failed or timed out (${timeout}ms): ${path}`);
       }
     };
-    // Chain on previous request regardless of its outcome (never let a failure wedge the queue)
     const result = this.fetchChain.then(run, run);
     this.fetchChain = result.catch(() => undefined);
     return result;
   }
 
-  /** Reload the structure file from the Miniserver (picks up newly added controls).
-   * Uses plain HTTP (data/LoxAPP3.json) through the serialized, time-boxed fetch queue:
-   * the websocket getStructureFile of the underlying library is only reliable during
-   * the initial connect, and a Miniserver reboot leaves the cache stale. */
+  /**
+   * Re-downloads data/LoxAPP3.json over plain HTTP so new controls become visible without a restart.
+   * HTTP carries its own credentials, so this also works while the WebSocket is reconnecting
+   * after a config deploy or reboot. Falls back to the WebSocket when HTTP fails.
+   */
   public async reloadStructure(): Promise<number> {
     try {
       const response = await this.fetch('data/LoxAPP3.json', 120000);
@@ -286,7 +301,6 @@ export class ConnectionManager extends EventEmitter {
         throw new Error('Structure file parsed but contains no controls');
       }
       this.structure = structure;
-      this.structureLoaded = true;
       this.emit('structureLoaded', this.structure);
       this.logger.info('ConnectionManager', `Structure reloaded via HTTP. ${Object.keys(structure.controls).length} controls`);
       return Object.keys(structure.controls).length;
@@ -298,37 +312,47 @@ export class ConnectionManager extends EventEmitter {
   }
 
   public async close() {
-    if (this.state === ConnectionState.DISCONNECTING) {
-      this.logger.warn('ConnectionManager', 'Already disconnecting');
+    if (this.state === ConnectionState.CLOSED) {
       return;
     }
-    
-    this.state = ConnectionState.DISCONNECTING;
-    this.cleanupAuthHandlers();
+    this.state = ConnectionState.CLOSED;
     this.removeAllListeners();
-    
     if (this.client) {
-      this.client.removeAllListeners();
-      await this.client.disconnect();
+      const client = this.client;
       this.client = undefined;
+      client.removeAllListeners();
+      client.on('error', () => undefined);
+      try {
+        await client.disconnect();
+      } catch (error) {
+        this.logger.warn('ConnectionManager', 'Error while disconnecting:', error);
+      }
     }
-    this.state = ConnectionState.DISCONNECTED;
     this.structure = null;
-    this.structureLoaded = false;
-    this.reconnectAttempts = 0;
   }
 
   public isConnected() {
-    return this.state === ConnectionState.CONNECTED;
+    return this.state === ConnectionState.CONNECTED && this.isClientReady();
   }
 
   public isStructureLoaded() {
-    return this.structureLoaded;
+    return this.structure !== null;
+  }
+
+  public getConnectionInfo(): ConnectionInfo {
+    return {
+      state: this.state,
+      miniserverUrl: this.baseUrl?.origin,
+      structureLoaded: this.structure !== null,
+      structureLastModified: this.structure?.lastModified,
+      lastDisconnectReason: this.lastDisconnectReason,
+      lastError: this.lastError,
+    };
   }
 
   public async sendCommand(command: string): Promise<TextCommandResponse> {
     if (!this.client) throw new Error('ConnectionManager not initialized');
-    if (this.state !== ConnectionState.CONNECTED) throw new Error('Not connected to Loxone');
+    if (!this.isConnected()) throw new Error('Not connected to Loxone');
     return await this.client.sendTextCommand(command) as TextCommandResponse;
   }
 

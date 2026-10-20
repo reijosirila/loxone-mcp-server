@@ -45,13 +45,13 @@ export class TimeService {
           `jdev/sps/io/${miniserverTimeUuid}`
         );
         
-        if (response?.LL?.value) {
+        if (response?.value !== undefined && response.value !== null) {
           this.stateManager.set(miniserverTimeUuid, {
             uuid: miniserverTimeUuid,
-            value: response.LL.value,
+            value: response.value,
             lastUpdated: new Date()
           });
-          this.logger.debug('TimeService', `Miniserver time: ${response.LL.value}`);
+          this.logger.debug('TimeService', `Miniserver time: ${response.value}`);
         }
       } catch (e) {
         this.logger.error('TimeService', 'Failed to get miniserver time:', e);

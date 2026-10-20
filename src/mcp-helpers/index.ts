@@ -1,77 +1,26 @@
 import 'reflect-metadata';
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
-
-/**
- * MCP Helper Functions and Decorators
- * Shared utilities for MCP tool implementation
- */
-
-// JSON Schema primitive types
-type JSONSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object' | 'null';
-
-// Property schema definition
-export interface PropertySchema {
-  type?: JSONSchemaType | JSONSchemaType[];
-  description?: string;
-  enum?: unknown[];
-  items?: PropertySchema; // For array types
-  properties?: Record<string, PropertySchema>; // For nested objects
-  required?: string[]; // For nested objects
-}
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import type { ZodRawShape } from 'zod';
+import type { Logger } from '../utils/Logger.js';
 
 export interface ToolMetadata {
-  name?: string; // Optional, will use method name if not provided
+  /** Defaults to the method name */
+  name?: string;
+  title?: string;
   description: string;
-  inputSchema: {
-    type: 'object';
-    properties?: Record<string, PropertySchema>;
-    required?: string[];
-  };
+  /** zod raw shape; the SDK validates arguments before the method is called */
+  inputSchema?: ZodRawShape;
+  annotations?: ToolAnnotations;
 }
 
 export interface RegisteredTool extends ToolMetadata {
   name: string;
-  target: unknown;
   methodName: string;
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  handler: Function;
+  handler: (args: Record<string, unknown>) => unknown;
 }
 
-// Global registry for all decorated tools
-export class ToolRegistry {
-  private static instance: ToolRegistry;
-  private tools: Map<string, RegisteredTool> = new Map();
-
-  private constructor() {}
-
-  public static getInstance(): ToolRegistry {
-    if (!ToolRegistry.instance) {
-      ToolRegistry.instance = new ToolRegistry();
-    }
-    return ToolRegistry.instance;
-  }
-
-  public registerTool(tool: RegisteredTool): void {
-    this.tools.set(tool.name, tool);
-  }
-
-  public getTool(name: string): RegisteredTool | undefined {
-    return this.tools.get(name);
-  }
-
-  public getAllTools(): RegisteredTool[] {
-    return Array.from(this.tools.values());
-  }
-
-  public clear(): void {
-    this.tools.clear();
-  }
-}
-
-/**
- * Decorator factory for MCP tools
- * @param metadata Tool metadata including description and input schema
- */
+/** Marks a method as an MCP tool; collect them with getToolsFromInstance(). */
 export function Tool(metadata: ToolMetadata): MethodDecorator {
   return function (
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,66 +28,28 @@ export function Tool(metadata: ToolMetadata): MethodDecorator {
     propertyKey: string | symbol,
     descriptor: PropertyDescriptor
   ): PropertyDescriptor {
-    const methodName = String(propertyKey);
-    const toolName = metadata.name || methodName;
-
-    // Store metadata for later retrieval
+    const toolName = metadata.name || String(propertyKey);
     Reflect.defineMetadata('tool:metadata', metadata, target, propertyKey);
     Reflect.defineMetadata('tool:name', toolName, target, propertyKey);
-
-    // Mark this method as a tool
     const existingTools = Reflect.getMetadata('tools', target) || [];
     existingTools.push(propertyKey);
     Reflect.defineMetadata('tools', existingTools, target);
-
-    // We'll register when the class is instantiated
-    const originalConstructor = target.constructor;
-    if (!Reflect.hasMetadata('tool:patched', originalConstructor)) {
-      const patchedConstructor = class extends originalConstructor {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        constructor(...args: any[]) {
-          super(...args);
-          // Register all tools from this instance
-          const registry = ToolRegistry.getInstance();
-          const tools = Reflect.getMetadata('tools', target) || [];
-          for (const toolMethod of tools) {
-            const toolMetadata = Reflect.getMetadata('tool:metadata', target, toolMethod);
-            const toolName = Reflect.getMetadata('tool:name', target, toolMethod);
-            if (toolMetadata && toolName) {
-              registry.registerTool({
-                ...toolMetadata,
-                name: toolName,
-                target: this,
-                methodName: String(toolMethod),
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                handler: (this as any)[toolMethod].bind(this)
-              });
-            }
-          }
-        }
-      };
-      Reflect.defineMetadata('tool:patched', true, patchedConstructor);
-    }
     return descriptor;
   };
 }
 
-/**
- * Helper function to get all tools from a class instance
- */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function getToolsFromInstance(instance: any): RegisteredTool[] {
   const tools: RegisteredTool[] = [];
   const prototype = Object.getPrototypeOf(instance);
-  const toolMethods = Reflect.getMetadata('tools', prototype) || [];
+  const toolMethods: (string | symbol)[] = Reflect.getMetadata('tools', prototype) || [];
   for (const methodName of toolMethods) {
-    const metadata = Reflect.getMetadata('tool:metadata', prototype, methodName);
-    const toolName = Reflect.getMetadata('tool:name', prototype, methodName);
+    const metadata: ToolMetadata | undefined = Reflect.getMetadata('tool:metadata', prototype, methodName);
+    const toolName: string | undefined = Reflect.getMetadata('tool:name', prototype, methodName);
     if (metadata && toolName) {
       tools.push({
         ...metadata,
         name: toolName,
-        target: instance,
         methodName: String(methodName),
         handler: instance[methodName].bind(instance)
       });
@@ -147,124 +58,77 @@ export function getToolsFromInstance(instance: any): RegisteredTool[] {
   return tools;
 }
 
-/**
- * Validate arguments against tool's input schema
- * Throws McpError with InvalidRequest code if validation fails
- */
-export function validateArguments(tool: RegisteredTool, args: Record<string, unknown>): void {
-  const schema = tool.inputSchema;
-  const required = schema.required || [];
-  const properties = schema.properties || {};
-  // Check all required parameters are present and not empty
-  for (const param of required) {
-    if (!(param in args)) {
-      throw new McpError(
-        ErrorCode.InvalidParams, 
-        `Missing required parameter: ${param} for tool ${tool.name}`
-      );
-    }
-    const value = args[param];
-    // Check for empty/null/undefined values
-    if (value === null || value === undefined) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Required parameter ${param} cannot be null or undefined for tool ${tool.name}`
-      );
-    }
-    // Check for empty strings
-    if (typeof value === 'string' && value.trim() === '') {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Required parameter ${param} cannot be an empty string for tool ${tool.name}`
-      );
-    }
-    // Check for empty arrays
-    if (Array.isArray(value) && value.length === 0) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Required parameter ${param} cannot be an empty array for tool ${tool.name}`
-      );
-    }
-  }
-  // Validate parameter types
-  for (const [key, value] of Object.entries(args)) {
-    if (!(key in properties)) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Unknown parameter: ${key} for tool ${tool.name}`
-      );
-    }
-    const propSchema = properties[key];
-    const expectedType = propSchema.type;
-    // Map JavaScript typeof to JSON Schema types
-    const getJsonSchemaType = (val: unknown): JSONSchemaType | 'undefined' => {
-      if (val === null) return 'null';
-      if (val === undefined) return 'undefined';
-      const jsType = typeof val;
-      if (jsType === 'object') {
-        return Array.isArray(val) ? 'array' : 'object';
-      }
-      if (jsType === 'number') return 'number';
-      if (jsType === 'string') return 'string';
-      if (jsType === 'boolean') return 'boolean';
-      return 'undefined';
-    };
-    const schemaType = getJsonSchemaType(value);
-    // Skip type validation for optional parameters that are null/undefined
-    const isRequired = required.includes(key);
-    if (!isRequired && (value === null || value === undefined)) {
-      continue; // Skip validation for optional null/undefined values
-    }
-    // Handle array of types (e.g., ['string', 'number', 'boolean'])
-    if (Array.isArray(expectedType)) {
-      if (!expectedType.includes(schemaType as JSONSchemaType)) {
-        throw new McpError(
-          ErrorCode.InvalidParams,
-          `Invalid type for parameter ${key}: expected one of [${expectedType.join(', ')}], got ${schemaType}`
-        );
-      }
-    } else if (expectedType && schemaType !== expectedType) {
-      // Single type validation
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Invalid type for parameter ${key}: expected ${expectedType}, got ${schemaType}`
-      );
-    }
-    // Validate enum values if specified
-    if (propSchema.enum && !propSchema.enum.includes(value)) {
-      throw new McpError(
-        ErrorCode.InvalidParams,
-        `Invalid value for parameter ${key}: must be one of [${propSchema.enum.join(', ')}]`
-      );
-    }
-  }
-}
-
-
-/**
- * Format any result as MCP response
- */
 export function formatMcpResponse(result: unknown) {
-  // Handle special cases for controls with toJSON method
   let data = result;
   if (Array.isArray(result)) {
-    // If array of controls, check if they have toJSON
-    data = result.map(item => 
-      item && typeof item.toJSON === 'function' ? item.toJSON() : item
-    );
+    data = result.map(item => item && typeof item.toJSON === 'function' ? item.toJSON() : item);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } else if (result && Object.prototype.hasOwnProperty.call(result, 'toJSON') && typeof (result as any).toJSON === 'function') {
-    // Single control with toJSON
+  } else if (result && typeof (result as any).toJSON === 'function') {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data = (result as any).toJSON();
   }
-  // Wrap in MCP response format
   return {
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify(data, null, 2),
-      },
-    ],
+    content: [{ type: 'text' as const, text: JSON.stringify(data, null, 2) }],
   };
 }
+
+/**
+ * Failures are reported inside the result (isError) so the model can read the
+ * reason and correct itself instead of receiving an opaque protocol error.
+ */
+export function formatMcpToolError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return {
+    content: [{ type: 'text' as const, text: `Error: ${message}` }],
+    isError: true,
+  };
+}
+
+/** Registers every @Tool method of the instance on the MCP server. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function registerTools(server: McpServer, instance: any, logger: Logger, component: string): RegisteredTool[] {
+  const tools = getToolsFromInstance(instance);
+  for (const tool of tools) {
+    server.registerTool(
+      tool.name,
+      {
+        title: tool.title,
+        description: tool.description,
+        inputSchema: tool.inputSchema ?? {},
+        annotations: tool.annotations,
+      },
+      async (args: Record<string, unknown>) => {
+        try {
+          return formatMcpResponse(await tool.handler(args ?? {}));
+        } catch (error) {
+          logger.warn(component, `Tool ${tool.name} failed:`, error instanceof Error ? error.message : error);
+          return formatMcpToolError(error);
+        }
+      }
+    );
+  }
+  return tools;
+}
+
+export const SERVER_INFO = {
+  name: 'loxone-mcp-server',
+  title: 'Loxone Smart Home Miniserver Connector',
+  version: process.env.npm_package_version || '1.0.0',
+};
+
+export const SERVER_INSTRUCTIONS = `# Loxone Smart Home MCP Server
+
+Tools for reading and controlling a Loxone Miniserver (lights, blinds, heating, audio, energy, sensors) and analysing its statistics.
+
+Recommended workflow:
+1. getSystemInfo to learn about the home (name, location, operating mode, control counts).
+2. getRooms / getCategories, then getControls with a room, category, type or search filter. Room and category accept names, not only UUIDs.
+3. getControls returns a compact list (uuid, type, summary, command names). Call getControl for full state details and command parameters.
+4. setControl with the control UUID and a command name from availableCommands. The response includes the refreshed state: verify it instead of assuming success.
+5. getStatistics only works for controls with hasStatistics=true.
+
+Notes:
+- Read-only controls (sensors, meters, monitors) have no commands.
+- Values use the Miniserver's units; temperatures use the configured temperature unit.
+- If the Miniserver is temporarily unreachable, tools report an error and the server reconnects automatically.
+- Call reloadStructure after controls were added or renamed in Loxone Config.`;
