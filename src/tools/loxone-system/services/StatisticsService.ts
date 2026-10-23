@@ -10,11 +10,24 @@ import type {
   StatisticsMetadata,
   V1StatisticsResponse,
   V2StatisticsResponse,
+  V2AggregatedDataPoint,
+  V2OutputInfo,
   FallbackStatisticsResponse
 } from '../types/statistics.js';
+import type { ControlStatisticV2 } from '../types/control-structure.js';
 import { TimeService } from './TimeService.js';
 import { Logger } from '../../../utils/Logger.js';
 import { ConnectionManager } from './ConnectionManager.js';
+import {
+  alignToBucketStart,
+  assignToBuckets,
+  generateBucketStarts,
+  listStatisticV2Outputs,
+  nextBucketStart,
+  parseStatisticV2Binary,
+  type StatisticV2Output,
+  type StatisticV2Row
+} from './StatisticV2.js';
 
 // Re-export the response type for convenience
 export type { StatisticsResponse } from '../types/statistics.js';
@@ -65,9 +78,26 @@ export class StatisticsService {
       const { fromTimestamp, toTimestamp, aggregationInterval } = (customFrom || customTo)
         ? this.calculateCustomRange(customFrom, customTo)
         : this.timeService.calculateTimeRange(period);
+      let v2Outputs: StatisticV2Output[] = [];
+      let v2Selected: StatisticV2Output | undefined;
+      if (hasV2) {
+        const requested = this.selectedOutput;
+        this.selectedOutput = 1;
+        v2Outputs = listStatisticV2Outputs(control.statisticV2 as ControlStatisticV2);
+        v2Selected = v2Outputs[requested - 1];
+        if (!v2Selected) {
+          const available = v2Outputs.map(o => `${o.index}=${o.title} (${o.unit})`).join(', ') || 'none';
+          throw new Error(`Control ${controlUuid} has no statistics output ${requested}. Available outputs: ${available}`);
+        }
+      }
 
       // Try to fetch actual statistics data via HTTP
       try {
+        if (hasV2 && v2Selected) {
+          return await this.getV2Statistics(
+            control.name, controlUuid, period, fromTimestamp, toTimestamp, aggregationInterval, v2Outputs, v2Selected
+          );
+        }
         // Fetch statistics metadata
         const statsData = await this.fetchStatisticsMetadata();
         const availableDates = this.findAvailableDates(statsData, controlUuid);
@@ -119,24 +149,6 @@ export class StatisticsService {
               outputs: outputNames
             };
           }
-          return response;
-        }
-        // For v2 statistics (binary format)
-        if (hasV2) {
-          const response: V2StatisticsResponse = {
-            type: 'v2',
-            control: control.name,
-            uuid: controlUuid,
-            period,
-            aggregationLevel: aggregationInterval,
-            from: this.timeService.convertTimestampToControllerTime(fromTimestamp, true),
-            to: this.timeService.convertTimestampToControllerTime(toTimestamp, true),
-            statisticsAvailable: true,
-            summary: {
-              message: 'V2 statistics use binary format. Data exists but requires binary parsing.',
-              availableFiles: availableDates.length
-            },
-          };
           return response;
         }
       } catch (fileError) {
@@ -233,6 +245,147 @@ export class StatisticsService {
     const outputNames = (control?.statistic?.outputs || []).map((o: { name: string }) => o.name);
     this.selectedOutput = 1; // reset after use
     return { dataPoints: allDataPoints.sort((a, b) => a.timestamp - b.timestamp), outputNames, columnCount };
+  }
+
+  private async getV2Statistics(
+    controlName: string,
+    controlUuid: string,
+    period: StatisticsPeriod,
+    fromTimestamp: number,
+    toTimestamp: number,
+    interval: AggregationInterval,
+    outputs: StatisticV2Output[],
+    selected: StatisticV2Output
+  ): Promise<V2StatisticsResponse> {
+    const offset = this.controllerOffsetSeconds();
+    const meter = selected.accumulated ? selected : outputs.find(o => o.accumulated);
+    const bucketInterval = selected.accumulated && interval === AggregationInterval.Minute ? AggregationInterval.Hour : interval;
+    const from = alignToBucketStart(fromTimestamp, bucketInterval, offset);
+    // Loxone's own month buckets drift off the calendar when local midnight is not UTC
+    // midnight (observed on a live Miniserver: Oct 1, Oct 31, Dec 1, Dec 31, ...), so months
+    // are summed from daily diffs instead.
+    const diffUnit = interval === AggregationInterval.Minute ? AggregationInterval.Hour
+      : interval === AggregationInterval.Month ? AggregationInterval.Day
+      : interval;
+    const diffFrom = alignToBucketStart(fromTimestamp, interval === AggregationInterval.Minute ? AggregationInterval.Hour : interval, offset);
+    const diffRows = meter
+      ? await this.fetchV2Rows(controlUuid, 'diff', diffFrom, toTimestamp, diffUnit, meter)
+      : [];
+    const samples = selected.accumulated
+      ? []
+      : (await this.fetchV2Rows(controlUuid, 'raw', from, toTimestamp, 'all', selected))
+        .map(row => ({ timestamp: row.timestamp, value: row.values[0] }))
+        .filter(sample => sample.timestamp >= from && sample.timestamp <= toTimestamp && Number.isFinite(sample.value));
+
+    // Hour and day diff rows start on the Miniserver's local boundaries including DST, so they
+    // are the most accurate bucket edges; each diff row is matched to a bucket by its midpoint.
+    const starts = diffRows.length > 0 && diffUnit === bucketInterval
+      ? diffRows.map(row => row.timestamp)
+      : generateBucketStarts(from, toTimestamp, bucketInterval, offset);
+    for (let next = nextBucketStart(starts[starts.length - 1], bucketInterval, offset); next <= toTimestamp; next = nextBucketStart(next, bucketInterval, offset)) {
+      starts.push(next);
+    }
+    const halfDiffUnit = diffUnit === AggregationInterval.Hour ? 1800 : 43200;
+    const consumptionBuckets = bucketInterval === AggregationInterval.Minute ? [] : assignToBuckets(
+      diffRows.map(row => ({ timestamp: row.timestamp + halfDiffUnit, value: row.values[0] })),
+      starts,
+      Number.POSITIVE_INFINITY
+    );
+    const consumptionByStart = new Map(consumptionBuckets
+      .filter(bucket => bucket.values.length > 0)
+      .map(bucket => [bucket.start, bucket.values.reduce((a, b) => a + b, 0)]));
+    const round = (value: number) => parseFloat(value.toFixed(3));
+    const at = (timestamp: number) => this.timeService.convertTimestampToControllerTime(timestamp, true);
+    // A day bucket from the other side of a DST change starts an hour off the current offset.
+    const bucketLabel = (start: number) => at(bucketInterval === AggregationInterval.Day
+      ? alignToBucketStart(start + 43200, AggregationInterval.Day, offset)
+      : start);
+
+    const aggregatedData: V2AggregatedDataPoint[] = [];
+    let summaryPoints: StatisticsDataPoint[];
+    if (selected.accumulated) {
+      summaryPoints = [];
+      for (const [start, total] of consumptionByStart) {
+        const value = round(total);
+        aggregatedData.push({ timestamp: bucketLabel(start), average: value, min: value, max: value, count: 1, consumption: value });
+        summaryPoints.push({ timestamp: start, value: total, date: new Date(start * 1000) });
+      }
+    } else if (bucketInterval === AggregationInterval.Minute) {
+      for (const sample of samples) {
+        const value = round(sample.value);
+        aggregatedData.push({ timestamp: at(sample.timestamp), average: value, min: value, max: value, count: 1 });
+      }
+      summaryPoints = samples.map(sample => ({ ...sample, date: new Date(sample.timestamp * 1000) }));
+    } else {
+      for (const bucket of assignToBuckets(samples, starts, toTimestamp)) {
+        if (bucket.values.length === 0) continue;
+        const consumption = consumptionByStart.get(bucket.start);
+        aggregatedData.push({
+          timestamp: bucketLabel(bucket.start),
+          average: round(bucket.values.reduce((a, b) => a + b, 0) / bucket.values.length),
+          min: round(Math.min(...bucket.values)),
+          max: round(Math.max(...bucket.values)),
+          count: bucket.values.length,
+          ...(consumption !== undefined && { consumption: round(consumption) })
+        });
+      }
+      summaryPoints = samples.map(sample => ({ ...sample, date: new Date(sample.timestamp * 1000) }));
+    }
+
+    const toInfo = (o: StatisticV2Output): V2OutputInfo => ({ index: o.index, title: o.title, output: o.output, unit: o.unit, accumulated: o.accumulated });
+    const consumptionPer = bucketInterval === AggregationInterval.Minute ? 'range starting at consumption.from' : `${bucketInterval} bucket`;
+    const describeMeter = (o: StatisticV2Output) =>
+      `${o.title} (output '${o.output}') used per ${consumptionPer} in ${o.unit}, the difference of the counter, not the counter reading`;
+    const valueDescription = selected.accumulated
+      ? `average/min/max/consumption: ${describeMeter(selected)}.`
+      : `average/min/max: ${selected.title} (output '${selected.output}') in ${selected.unit}, recorded ${selected.sampling}.` +
+        (meter ? ` consumption: ${describeMeter(meter)}; consumption.total covers the whole range.` : '');
+
+    return {
+      type: 'v2',
+      control: controlName,
+      uuid: controlUuid,
+      period,
+      aggregationLevel: bucketInterval,
+      from: at(from),
+      to: at(toTimestamp),
+      statisticsAvailable: true,
+      totalDataPoints: selected.accumulated ? diffRows.length : samples.length,
+      aggregatedData,
+      summary: this.calculateSummary(summaryPoints),
+      valueDescription,
+      selectedOutput: toInfo(selected),
+      outputs: outputs.map(toInfo),
+      ...(meter && {
+        consumption: {
+          title: meter.title,
+          output: meter.output,
+          unit: meter.unit,
+          from: at(diffFrom),
+          total: round(diffRows.reduce((sum, row) => sum + row.values[0], 0))
+        }
+      })
+    };
+  }
+
+  private async fetchV2Rows(
+    controlUuid: string,
+    kind: 'raw' | 'diff',
+    from: number,
+    to: number,
+    unit: string,
+    output: StatisticV2Output
+  ): Promise<StatisticV2Row[]> {
+    const path = `jdev/sps/getStatistic/${controlUuid}/${kind}/${from}/${to}/${unit}/${output.groupId}/${output.output}`;
+    const response = await this.connectionManager.fetch(path);
+    if (!response.ok) {
+      throw new Error(`Miniserver returned HTTP ${response.status} for ${path}`);
+    }
+    // Errors (e.g. unknown group or output) arrive as a JSON LL envelope with HTTP 200.
+    if ((response.headers.get('content-type') ?? '').includes('json')) {
+      throw new Error(`Miniserver rejected ${path}: ${(await response.text()).slice(0, 200)}`);
+    }
+    return parseStatisticV2Binary(new Uint8Array(await response.arrayBuffer()));
   }
 
   private controllerOffsetSeconds(): number {
@@ -429,7 +582,7 @@ export class StatisticsService {
   }
 
   private createFallbackResponse(
-    control: { name: string; statistic?: { frequency?: number; outputs?: Array<{ id: number; name: string }> }; statisticV2?: { groups?: Array<{ id: number; name: string; outputs: Array<{ id: number; name: string; format: string }> }> } },
+    control: { name: string; statistic?: { frequency?: number; outputs?: Array<{ id: number; name: string }> }; statisticV2?: ControlStatisticV2 },
     controlUuid: string,
     period: StatisticsPeriod,
     fromTimestamp: number,

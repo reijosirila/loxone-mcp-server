@@ -96,7 +96,7 @@ Every control in the structure file is visible: types without a dedicated implem
 The MCP server supports Loxone Statistics, which aggregates historical data into smaller portions optimized for AI analysis. This allows for efficient analysis of trends and patterns in your smart home data.
 
 - **Statistics V1**: ✅ Fully supported and tested (Gen1 Miniservers included: large monthly files, controller-local timezone, multi-output files)
-- **Statistics V2**: ⚠️ Supported but not yet tested
+- **Statistics V2** (meters, Energy Flow Monitor): ✅ Supported and tested against a live Miniserver. Power outputs return average/min/max per bucket; meters also return the energy used per bucket (`consumption`, the counter difference) and `consumption.total`. `valueDescription` names the unit of each value, and `output` selects any output listed in `outputs`
 - Custom time windows: pass ISO `from`/`to` to `getStatistics`; the aggregation level (minute, hour, day, month) is chosen from the span
 
 ## Loxone Control Implementation Status

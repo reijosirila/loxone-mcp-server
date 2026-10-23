@@ -37,16 +37,20 @@ export interface ControlStatistic {
   }>;
 }
 
-export interface ControlStatisticV2 {
-  groups?: Array<{
-    id: number;
-    name: string;
-    outputs: Array<{
-      id: number;
-      name: string;
-      format: string;
-    }>;
+export interface ControlStatisticV2Group {
+  id: string | number;
+  mode?: number;
+  accumulated?: boolean;
+  activeSince?: number;
+  dataPoints?: Array<{
+    title: string;
+    format?: string;
+    output: string;
   }>;
+}
+
+export interface ControlStatisticV2 {
+  groups?: ControlStatisticV2Group[];
 }
 
 export interface LoxoneControlState {
