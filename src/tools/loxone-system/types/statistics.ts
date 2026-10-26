@@ -1,4 +1,5 @@
 import { StatisticsPeriod, AggregationInterval } from './structure.js';
+import type { ControlStatisticV2Group } from './control-structure.js';
 
 export interface StatisticsMetadata {
   Statisticfiles?: {
@@ -63,11 +64,32 @@ export interface V1StatisticsResponse extends BaseStatisticsResponse {
   summary: StatisticsSummary | { message: string };
 }
 
+export interface V2AggregatedDataPoint extends AggregatedDataPoint {
+  consumption?: number;
+}
+
+export interface V2OutputInfo {
+  index: number;
+  title: string;
+  output: string;
+  unit: string;
+  accumulated: boolean;
+}
+
 export interface V2StatisticsResponse extends BaseStatisticsResponse {
   type: 'v2';
-  summary: {
-    message: string;
-    availableFiles: number;
+  totalDataPoints: number;
+  aggregatedData: V2AggregatedDataPoint[];
+  summary: StatisticsSummary | { message: string };
+  valueDescription: string;
+  selectedOutput: V2OutputInfo;
+  outputs: V2OutputInfo[];
+  consumption?: {
+    title: string;
+    output: string;
+    unit: string;
+    from: string;
+    total: number;
   };
 }
 
@@ -79,15 +101,7 @@ export interface FallbackStatisticsResponse extends BaseStatisticsResponse {
     id: number;
     name: string;
   }>;
-  groups?: Array<{
-    id: number;
-    name: string;
-    outputs: Array<{
-      id: number;
-      name: string;
-      format: string;
-    }>;
-  }>;
+  groups?: ControlStatisticV2Group[];
   info: string;
 }
 
